@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --nodes=1 --cpus-per-task 64
-#SBATCH --time=24:00:00
-#SBATCH --gres=gpu:8
+#SBATCH --nodes=1 --cpus-per-task 16
+#SBATCH --time=8:00:00
+#SBATCH --gres=gpu:4
 #SBATCH -J BERTbase_SST2_seed0
 module load pytorch/1.12.1
 module load cuda/10.2
@@ -17,6 +17,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
     python3 main.py \
     --dataset $dataset_path \
     --checkpoint_path $checkpoint_path \
-    --model $model_path
+    --model $model_path \
+    --seed $seed
 
 
