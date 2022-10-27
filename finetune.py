@@ -18,7 +18,7 @@ def run_epoch(model,dataloader:DataLoader,device, optimizer:Optional[torch.optim
         if optimizer is not None:
             optimizer.zero_grad()
         outputs = model(**batch)
-        loss = outputs.loss
+        loss = torch.sum(outputs.loss)
         loss.backward()
         losses.append(loss.detach().cpu())
         if optimizer is not None:
@@ -32,8 +32,8 @@ from datasets.arrow_dataset import Dataset
 #     x.select()
 
 def finetune(model : torch.nn.Module,tokenized_datasets : DatasetDict, lr=3e-5, checkpoint_path:Optional[Path]=None):
-    train_dataloader = DataLoader(tokenized_datasets["train"], shuffle=True, batch_size=16)
-    eval_dataloader = DataLoader(tokenized_datasets["dev"], shuffle=True, batch_size=16)
+    train_dataloader = DataLoader(tokenized_datasets["train"], shuffle=True, batch_size=32)
+    eval_dataloader = DataLoader(tokenized_datasets["dev"], shuffle=True, batch_size=32)
 
     optimizer = Adam(model.parameters(), lr=lr)
     num_epochs = 3
