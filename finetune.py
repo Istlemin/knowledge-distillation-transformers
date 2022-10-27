@@ -40,6 +40,7 @@ def finetune(model : torch.nn.Module,tokenized_datasets : DatasetDict, lr=3e-5, 
     num_training_steps = num_epochs * len(train_dataloader)
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    model = torch.nn.DataParallel(model)
     model.to(device)
 
     if checkpoint_path is not None:

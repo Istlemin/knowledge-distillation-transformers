@@ -1,5 +1,8 @@
 from pathlib import Path
 import argparse
+import torch
+import random
+import numpy as np
 
 from dataset_loading import load_glue_sentence_classification
 from tokenization import tokenize
@@ -11,7 +14,12 @@ def main():
     parser.add_argument('--dataset',dest='dataset_path',type=Path,required=True)
     parser.add_argument('--model',dest='model_path',type=Path)
     parser.add_argument('--checkpoint_path',dest='checkpoint_path',type=Path)
+    parser.add_argument('--seed',dest='seed',type=int,default=0)
     args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
     
     datasets = load_glue_sentence_classification(args.dataset_path)
     datasets = tokenize(datasets)
