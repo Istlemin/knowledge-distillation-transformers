@@ -18,6 +18,7 @@ checkpoint_path="../checkpoints/BERTbase_SST2_seed0"
     --dataset $dataset_path \
     --checkpoint_path $checkpoint_path \
     --model $model_path \
-    --seed $seed
+    --seed $seed \
+    --device_ids 0 1
 
 

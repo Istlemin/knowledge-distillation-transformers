@@ -14,7 +14,7 @@
             "--model",
             "../models/pretrained_bert.pt",
             "--checkpoint_path",
-            "../checkpoints/small_cpu_test"],
+            "../checkpoints/localgpu_test"],
             "console": "integratedTerminal",
             "justMyCode": false
         }

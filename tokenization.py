@@ -1,6 +1,8 @@
+from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer
+from datasets import Dataset
 
-def tokenize(dataset):
+def tokenize(dataset) -> Dataset:
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased") 
 
     def tokenize_function(sample):
