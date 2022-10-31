@@ -1,4 +1,4 @@
-from distutils.command import check
+from glob import glob
 from pathlib import Path
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
@@ -6,8 +6,8 @@ import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-from transformers import get_scheduler
 import time
+
 
 from tqdm.auto import tqdm
 
@@ -40,12 +40,12 @@ def run_epoch(model,dataloader:DataLoader,device:Device, optimizer:Optional[torc
     loss = torch.mean(torch.stack(losses))
     return loss, correct_predictions/total_predictions
 
-def finetune(model : torch.nn.Module,tokenized_datasets : DatasetDict, lr=3e-5, checkpoint_path:Optional[Path]=None, device_ids=None):
+def finetune(model : torch.nn.Module,tokenized_datasets : DatasetDict, lr=1e-5, checkpoint_path:Optional[Path]=None, device_ids=None, resume=False):
     train_dataloader = DataLoader(tokenized_datasets["train"], shuffle=True, batch_size=16)
     eval_dataloader = DataLoader(tokenized_datasets["dev"], shuffle=True, batch_size=16)
 
     optimizer = Adam(model.parameters(), lr=lr)
-    num_epochs = 3
+    num_epochs = 10
     
     device = torch.device("cpu")
     if device_ids is not None:
@@ -56,10 +56,17 @@ def finetune(model : torch.nn.Module,tokenized_datasets : DatasetDict, lr=3e-5, 
             model = torch.nn.DataParallel(model, device_ids=device_ids)
             model.to(device)
 
+    start_epoch = 0
     if checkpoint_path is not None:
         checkpoint_path.mkdir(parents=True,exist_ok=True)
+        if resume:
+            latest_checkpoint = sorted(glob(str(checkpoint_path / "*")))[-1]
+            checkpoint = torch.load(latest_checkpoint)
+            start_epoch = checkpoint["epochs"]
+            model.module.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch,num_epochs):
         print(f"EPOCH {epoch}:")
 
         model.train()        

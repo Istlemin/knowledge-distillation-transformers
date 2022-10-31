@@ -10,7 +10,7 @@
 seed=0
 dataset_path="../GLUE-baselines/glue_data/SST-2/"
 model_path="../models/pretrained_bert.pt" 
-checkpoint_path="../checkpoints/BERTbase_SST2_seed0" 
+checkpoint_path="../checkpoints/BERTbase_SST2_lowerLR_seed0" 
 
 
 #CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
@@ -19,6 +19,8 @@ checkpoint_path="../checkpoints/BERTbase_SST2_seed0"
     --checkpoint_path $checkpoint_path \
     --model $model_path \
     --seed $seed \
-    --device_ids 0 1
+    --device_ids 0 1 \
+    --resume \
+    > log 2>&1
 
 
