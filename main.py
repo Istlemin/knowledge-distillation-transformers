@@ -14,12 +14,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset',dest='dataset_path',type=Path,required=True)
     parser.add_argument('--model',dest='model_path',type=Path)
-    parser.add_argument('--checkpoint_path',dest='checkpoint_path',type=Path)
+    parser.add_argument('--checkpoint_path',type=Path)
     parser.add_argument('--resume',action='store_true')
-    parser.add_argument('--seed',dest='seed',type=int,default=0)
-    parser.add_argument('--device_ids',dest='device_ids',nargs="+",type=int,default=None)
+    parser.add_argument('--seed',type=int,default=0)
+    parser.add_argument('--lr',type=float,default=1e-5)
+    parser.add_argument('--device_ids',nargs="+",type=int,default=None)
     args = parser.parse_args()
-    
+
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
