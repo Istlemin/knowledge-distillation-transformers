@@ -31,7 +31,7 @@ def main():
         model = load_pretrained_bert_base()
     else:
         model = load_model_from_disk(args.model_path)
-    finetune(model,datasets,checkpoint_path=args.checkpoint_path, device_ids=args.device_ids, resume=args.resume)
+    finetune(model,datasets,checkpoint_path=args.checkpoint_path, device_ids=args.device_ids, resume=args.resume, lr=args.lr)
     
 if __name__=="__main__":
     main()

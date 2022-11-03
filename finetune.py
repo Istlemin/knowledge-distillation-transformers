@@ -41,11 +41,11 @@ def run_epoch(model,dataloader:DataLoader,device:Device, optimizer:Optional[torc
     return loss, correct_predictions/total_predictions
 
 def finetune(model : torch.nn.Module,tokenized_datasets : DatasetDict, lr=1e-5, checkpoint_path:Optional[Path]=None, device_ids=None, resume=False):
-    train_dataloader = DataLoader(tokenized_datasets["train"], shuffle=True, batch_size=16)
-    eval_dataloader = DataLoader(tokenized_datasets["dev"], shuffle=True, batch_size=16)
+    train_dataloader = DataLoader(tokenized_datasets["train"], shuffle=True, batch_size=32)
+    eval_dataloader = DataLoader(tokenized_datasets["dev"], shuffle=True, batch_size=32)
 
     optimizer = Adam(model.parameters(), lr=lr)
-    num_epochs = 10
+    num_epochs = 6
     
     device = torch.device("cpu")
     if device_ids is not None:
@@ -89,7 +89,7 @@ def finetune(model : torch.nn.Module,tokenized_datasets : DatasetDict, lr=1e-5, 
                 'model_state_dict': model_state_dict,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'train_loss': train_loss,
-                'test_loss': train_loss,
+                'test_loss': test_loss,
                 'train_accuracy': train_accuracy,
                 'test_accuracy': test_accuracy,
             }, checkpoint_path / time.strftime("%Y-%m-%d_%H:%M:%S"))

@@ -5,22 +5,23 @@
 #SBATCH -J BERTbase_SST2_seed0
 #module load pytorch/1.12.1
 #module load cuda/10.2
-source activate torch
+#source activate torch
 
 seed=0
 dataset_path="../GLUE-baselines/glue_data/SST-2/"
 model_path="../models/pretrained_bert.pt" 
-checkpoint_path="../checkpoints/BERTbase_SST2_LR1e-6_seed0" 
+checkpoint_path="../checkpoints/BERTbase_SST2_LR2e-5_batch32_seed0" 
 
 
 #CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
-    python3 main.py \
+python3 main.py \
     --dataset $dataset_path \
     --checkpoint_path $checkpoint_path \
     --model $model_path \
     --seed $seed \
-    --lr 1e-6 \
-    --device_ids 0 1 \
+    --lr 2e-5 \
+    --device_ids 0 1 2 3 \
+    #--resume \
     > log 2>&1
 
 
