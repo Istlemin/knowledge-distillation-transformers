@@ -1,2 +1,3 @@
 *.pyc
 log
+kd_transformers.egg-info

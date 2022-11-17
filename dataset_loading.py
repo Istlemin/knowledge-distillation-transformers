@@ -1,5 +1,6 @@
 from pathlib import Path
 import pandas
+import glob
 
 from datasets.dataset_dict import DatasetDict
 from datasets.arrow_dataset import Dataset
@@ -25,3 +26,9 @@ def load_tokenized_dataset(dataset_path:Path, dataset_load_function):
         datasets = tokenize(datasets)
         datasets.save_to_disk(tokenized_path)
         return datasets
+
+def load_tokenized_batched(dataset_path:Path):
+    dataset = Dataset()
+    for path in glob.glob(dataset_path / "tokenized*"):
+        dataset = dataset.
+        DatasetDict.load_from_disk(path)
