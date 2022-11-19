@@ -12,10 +12,13 @@ import argparse
 import torch
 import random
 import numpy as np
-from dataset_loading import load_glue_sentence_classification, load_tokenized_dataset
+from dataset_loading import (
+    MLMDataset,
+    load_glue_sentence_classification,
+    load_tokenized_dataset,
+)
 from finetune import finetune
-from model import load_pretrained_bert_base, load_model_from_disk
-
+from model import load_pretrained_bert_base, load_model_from_disk, load_untrained_bert_base
 
 from tqdm.auto import tqdm
 
@@ -139,12 +142,10 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    datasets = load_tokenized_dataset(
-        args.dataset_path, load_glue_sentence_classification
-    )
+    dataset = MLMDataset(args.dataset_path)
 
     if args.model_path is None:
-        model = load_pretrained_bert_base()
+        model = load_untrained_bert_base()
     else:
         model = load_model_from_disk(args.model_path)
     finetune(

@@ -1,4 +1,6 @@
+from collections import defaultdict
 from multiprocessing import Process, Queue
+import multiprocessing
 from pathos.multiprocessing import Pool
 from datasets.arrow_dataset import Dataset
 from transformers import PreTrainedTokenizer
@@ -10,6 +12,8 @@ import glob
 from pathlib import Path
 from datasets import concatenate_datasets
 from transformers import AutoTokenizer
+from dataset_loading import load_tokenized_batched
+import argparse
 
 
 class MLMDatasetGenerator:
@@ -91,7 +95,7 @@ class MLMDatasetGenerator:
         # is_masked += [False] * num_padding
 
         return {
-            "tokens": instance_tokens,
+            "tokens": tokens,
             "masked_tokens": masked_tokens,
             "is_masked": is_masked,
         }
@@ -104,7 +108,15 @@ class MLMDatasetGenerator:
         ]
 
 
-def prepare_dataset(document_dataset: Dataset, q: Queue, seq_len=512):
+def transpose_dict(list_of_dicts: List[Dict]):
+    res = defaultdict(list)
+    for d in list_of_dicts:
+        for k, v in d.items():
+            res[k].append(v)
+    return res
+
+
+def prepare_dataset(document_dataset: Dataset, outdir: Path, seq_len=512):
     global dataset_generator
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
@@ -121,34 +133,43 @@ def prepare_dataset(document_dataset: Dataset, q: Queue, seq_len=512):
     all_instances = map(
         document_to_instances, tqdm.tqdm(document_dataset)
     )  # , chunksize=100000
-    res = sum(list(all_instances), [])
-    q.put(res)
+    dataset_dict = transpose_dict(sum(all_instances, []))
+    for key in dataset_dict:
+        dataset_dict[key] = torch.stack(dataset_dict[key])
+    mlm_dataset = Dataset.from_dict(dataset_dict)
+    mlm_dataset.save_to_disk(outdir)
 
 
-def main():
-
-    dataset_path = Path("../wikipedia_dataset/")
-    dataset = concatenate_datasets(
-        [
-            Dataset.load_from_disk(path)
-            for path in glob.glob(str(dataset_path / "tokenized*"))
-        ]
-    )
-
-    batch_size = 100000
+def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
     batches = [
-        dataset.select(range(i, i + batch_size))
-        for i in tqdm.tqdm(range(0, len(dataset), batch_size))
+        document_dataset.select(range(i, i + batch_size))
+        for i in tqdm.tqdm(range(0, len(document_dataset), batch_size))
     ]
 
-    q = Queue()
-    processes = [Process(target=prepare_dataset, args=(batch, q)) for batch in batches]
+    processes = [
+        Process(target=prepare_dataset, args=(batch, outdir / str(i)))
+        for i, batch in enumerate(batches)
+    ]
     for p in processes:
         p.start()
     for p in processes:
         p.join()
+        print("join!")
 
-    print(len(q))
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--in_dataset", dest="in_dataset_path", type=Path, required=True
+    )
+    parser.add_argument(
+        "--out_dataset", dest="out_dataset_path", type=Path, required=True
+    )
+    args = parser.parse_args()
+
+    dataset = load_tokenized_batched(args.in_dataset_path)
+
+    batched_prepare_datasets(dataset, Path(args.out_dataset_path))
 
 
 if __name__ == "__main__":
