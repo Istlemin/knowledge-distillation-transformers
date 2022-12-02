@@ -9,12 +9,42 @@
             "type": "python",
             "request": "launch",
             "program": "${file}",
-            "args": ["--dataset",
-            "../GLUE-baselines/glue_data/SST-2/",
-            "--model",
-            "../models/pretrained_bert.pt",
-            "--checkpoint_path",
-            "../checkpoints/localgpu_test"],
+            "args": [
+                "--dataset",
+                "../GLUE-baselines/glue_data/SST-2/",
+                "--model",
+                "../models/pretrained_bert.pt",
+                "--checkpoint_path",
+                "../checkpoints/localgpu_test"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Pretrain",
+            "type": "python",
+            "request": "launch",
+            "program": "pretrain.py",
+            "args": [
+                "--dataset",
+                "../wikipedia_mlm/",
+                "--device_ids",
+                "0"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "KD",
+            "type": "python",
+            "request": "launch",
+            "program": "kd_training.py",
+            "args": [
+                "--dataset",
+                "../wikipedia_mlm/",
+                "--device_ids",
+                "0"
+            ],
             "console": "integratedTerminal",
             "justMyCode": false
         }

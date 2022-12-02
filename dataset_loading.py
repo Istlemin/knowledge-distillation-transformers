@@ -9,15 +9,6 @@ from datasets import concatenate_datasets
 from tokenization import tokenize
 import torch
 
-class MLMDataset(torch.utils.data.Dataset):
-    def __init__(self, path):
-        self.dataset = load_batched_dataset(path)
-    
-    def __len__(self):
-        return len(self.dataset)
-    
-    def __getitem__(self,item):
-        return self.dataset[item]
 
 def load_tsv(path):
     return Dataset.from_pandas(pandas.read_csv(path, sep="\t"))
@@ -44,8 +35,5 @@ def load_tokenized_dataset(dataset_path: Path, dataset_load_function):
 
 def load_batched_dataset(dataset_path: Path):
     return concatenate_datasets(
-        [
-            Dataset.load_from_disk(path)
-            for path in glob.glob(str(dataset_path / "*"))
-        ]
+        [Dataset.load_from_disk(path) for path in glob.glob(str(dataset_path / "*"))]
     )

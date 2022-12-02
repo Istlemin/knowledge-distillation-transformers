@@ -1,7 +1,10 @@
+from collections import namedtuple
 from glob import glob
 from pathlib import Path
+from turtle import forward
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
+from datasets.arrow_dataset import Dataset
 import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
@@ -12,66 +15,105 @@ import argparse
 import torch
 import random
 import numpy as np
+from transformers import AutoModelForMaskedLM, BertForMaskedLM
+
 from dataset_loading import (
-    MLMDataset,
     load_glue_sentence_classification,
     load_tokenized_dataset,
+    load_batched_dataset,
 )
-from finetune import finetune
-from model import load_pretrained_bert_base, load_model_from_disk, load_untrained_bert_base
+from model import (
+    BertForMaskedLMWithLoss,
+    ModelWithLoss,
+    get_bert_config,
+    load_pretrained_bert_base,
+    load_model_from_disk,
+    load_untrained_bert_base,
+)
 
 from tqdm.auto import tqdm
 
+from typing import NamedTuple
+
+
+class MLMBatch(NamedTuple):
+    tokens: torch.tensor
+    masked_tokens: torch.tensor
+    is_masked: torch.tensor
+
+
+class MLMDataset(torch.utils.data.Dataset):
+    def __init__(self, path):
+        self.dataset: Dataset = Dataset.load_from_disk(path)
+        self.dataset.set_format("torch")
+        self.tokens = self.dataset["tokens"]
+        self.masked_tokens = self.dataset["masked_tokens"]
+        self.is_masked = self.dataset["is_masked"]
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, item):
+        return MLMBatch(
+            tokens=self.tokens[item],
+            masked_tokens=self.masked_tokens[item],
+            is_masked=self.is_masked[item],
+        )
+
 
 def run_epoch(
-    model,
+    model: ModelWithLoss,
     dataloader: DataLoader,
     device: Device,
     optimizer: Optional[torch.optim.Optimizer] = None,
 ):
-    if optimizer is None:
-        model.eval()
-    else:
-        model.train()
+    model.train()
 
     progress_bar = tqdm(range(len(dataloader)))
+
     losses = []
     correct_predictions = 0
     total_predictions = 0
-    for batch in dataloader:
-        batch = {k: v.to(device) for k, v in batch.items()}
+
+    for i, batch in enumerate(dataloader):
+        tokens = batch.tokens[:, :64].to(device)
+        masked_tokens = batch.masked_tokens[:, :64].to(device)
+        is_masked = batch.is_masked[:, :64].to(device)
+        batch_size = len(tokens)
         if optimizer is not None:
             optimizer.zero_grad()
-        outputs = model(**batch)
 
-        predictions = torch.argmax(outputs.logits, dim=1)
-        correct_predictions += torch.sum(predictions == batch["labels"]).item()
-        total_predictions += len(predictions)
+        loss, batch_correct_predictions = model(
+            input_ids=masked_tokens, is_masked=is_masked, output_ids=tokens
+        )
 
-        loss = torch.sum(outputs.loss)
+        total_predictions += torch.sum(is_masked)
+        correct_predictions += batch_correct_predictions
+
         loss.backward()
         losses.append(loss.detach().cpu())
         if optimizer is not None:
             optimizer.step()
         progress_bar.update(1)
+        progress_bar.set_description(
+            f"Loss: {loss.item():.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%",
+            refresh=True,
+        )
     loss = torch.mean(torch.stack(losses))
     return loss, correct_predictions / total_predictions
 
 
-def finetune(
-    model: torch.nn.Module,
-    tokenized_datasets: DatasetDict,
-    lr=1e-5,
+def pretrain(
+    model: ModelWithLoss,
+    dataset_path: Path,
+    lr=1e-4,
     checkpoint_path: Optional[Path] = None,
+    checkpoint_every_nth=1000,
     device_ids=None,
     resume=False,
 ):
-    train_dataloader = DataLoader(
-        tokenized_datasets["train"], shuffle=True, batch_size=32
-    )
-    eval_dataloader = DataLoader(tokenized_datasets["dev"], shuffle=True, batch_size=32)
 
-    optimizer = Adam(model.parameters(), lr=lr)
+    optimizer = Adam(model.parameters(), lr=lr, betas=[0.9, 0.999], weight_decay=0.01)
     num_epochs = 6
 
     device = torch.device("cpu")
@@ -94,37 +136,36 @@ def finetune(
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
     for epoch in range(start_epoch, num_epochs):
-        print(f"EPOCH {epoch}:")
+        for dataset_batch_idx in range(60):
+            dataset = MLMDataset(dataset_path / str(dataset_batch_idx))
+            train_dataloader = DataLoader(dataset, shuffle=True, batch_size=16)
+            print(f"EPOCH {epoch}:")
 
-        model.train()
-        train_loss, train_accuracy = run_epoch(
-            model, train_dataloader, optimizer=optimizer, device=device
-        )
-        model.eval()
-        test_loss, test_accuracy = run_epoch(model, eval_dataloader, device=device)
-        print("Train loss:", train_loss, "\t\tTrain accuracy:", train_accuracy)
-        print("Test loss:", test_loss, "\t\tTest accuracy:", test_accuracy)
-
-        if checkpoint_path is not None:
-            print("Saving checkpoint...")
-
-            if type(model) == torch.nn.DataParallel:
-                model_state_dict = model.module.state_dict()
-            else:
-                model_state_dict = model.state_dict()
-
-            torch.save(
-                {
-                    "epochs": epoch + 1,
-                    "model_state_dict": model_state_dict,
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "train_loss": train_loss,
-                    "test_loss": test_loss,
-                    "train_accuracy": train_accuracy,
-                    "test_accuracy": test_accuracy,
-                },
-                checkpoint_path / time.strftime("%Y-%m-%d_%H:%M:%S"),
+            model.train()
+            train_loss, train_accuracy = run_epoch(
+                model, train_dataloader, optimizer=optimizer, device=device
             )
+            model.eval()
+            print("Train loss:", train_loss, "\t\tTrain accuracy:", train_accuracy)
+
+            if checkpoint_path is not None:
+                print("Saving checkpoint...")
+
+                if type(model) == torch.nn.DataParallel:
+                    model_state_dict = model.module.state_dict()
+                else:
+                    model_state_dict = model.state_dict()
+
+                torch.save(
+                    {
+                        "epochs": epoch + 1,
+                        "model_state_dict": model_state_dict,
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "train_loss": train_loss,
+                        "train_accuracy": train_accuracy,
+                    },
+                    checkpoint_path / f"epoch{epoch}",
+                )
 
 
 def main():
@@ -134,7 +175,7 @@ def main():
     parser.add_argument("--checkpoint_path", type=Path)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--device_ids", nargs="+", type=int, default=None)
     args = parser.parse_args()
 
@@ -142,15 +183,18 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    dataset = MLMDataset(args.dataset_path)
-
     if args.model_path is None:
-        model = load_untrained_bert_base()
+        model = AutoModelForMaskedLM.from_config(get_bert_config("tiny"))
     else:
         model = load_model_from_disk(args.model_path)
-    finetune(
-        model,
-        datasets,
+
+    # model = AutoModelForMaskedLM.from_pretrained(
+    #     "bert-base-uncased", num_labels=5
+    # )
+
+    pretrain(
+        BertForMaskedLMWithLoss(model),
+        args.dataset_path,
         checkpoint_path=args.checkpoint_path,
         device_ids=args.device_ids,
         resume=args.resume,
