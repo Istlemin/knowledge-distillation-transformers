@@ -12,7 +12,7 @@ import glob
 from pathlib import Path
 from datasets import concatenate_datasets
 from transformers import AutoTokenizer
-from dataset_loading import load_tokenized_batched
+from dataset_loading import load_batched_dataset
 import argparse
 
 
@@ -116,7 +116,7 @@ def transpose_dict(list_of_dicts: List[Dict]):
     return res
 
 
-def prepare_dataset(document_dataset: Dataset, outdir: Path, seq_len=512):
+def prepare_dataset(document_dataset: Dataset, outdir: Path, seq_len=128):
     global dataset_generator
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
@@ -167,7 +167,7 @@ def main():
     )
     args = parser.parse_args()
 
-    dataset = load_tokenized_batched(args.in_dataset_path)
+    dataset = load_batched_dataset(args.in_dataset_path)
 
     batched_prepare_datasets(dataset, Path(args.out_dataset_path))
 

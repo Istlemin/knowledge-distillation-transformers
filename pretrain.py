@@ -76,9 +76,9 @@ def run_epoch(
     total_predictions = 0
 
     for i, batch in enumerate(dataloader):
-        tokens = batch.tokens[:, :64].to(device)
-        masked_tokens = batch.masked_tokens[:, :64].to(device)
-        is_masked = batch.is_masked[:, :64].to(device)
+        tokens = batch.tokens[:, :10000].to(device)
+        masked_tokens = batch.masked_tokens[:, :10000].to(device)
+        is_masked = batch.is_masked[:, :10000].to(device)
         batch_size = len(tokens)
         if optimizer is not None:
             optimizer.zero_grad()
@@ -107,6 +107,8 @@ def pretrain(
     model: ModelWithLoss,
     dataset_path: Path,
     lr=1e-4,
+    num_epochs=3,
+    batch_size=8,
     checkpoint_path: Optional[Path] = None,
     checkpoint_every_nth=1000,
     device_ids=None,
@@ -114,7 +116,6 @@ def pretrain(
 ):
 
     optimizer = Adam(model.parameters(), lr=lr, betas=[0.9, 0.999], weight_decay=0.01)
-    num_epochs = 6
 
     device = torch.device("cpu")
     if device_ids is not None:
@@ -138,7 +139,7 @@ def pretrain(
     for epoch in range(start_epoch, num_epochs):
         for dataset_batch_idx in range(60):
             dataset = MLMDataset(dataset_path / str(dataset_batch_idx))
-            train_dataloader = DataLoader(dataset, shuffle=True, batch_size=16)
+            train_dataloader = DataLoader(dataset, shuffle=True, batch_size=batch_size)
             print(f"EPOCH {epoch}:")
 
             model.train()
@@ -176,6 +177,8 @@ def main():
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--device_ids", nargs="+", type=int, default=None)
     args = parser.parse_args()
 
@@ -188,9 +191,7 @@ def main():
     else:
         model = load_model_from_disk(args.model_path)
 
-    # model = AutoModelForMaskedLM.from_pretrained(
-    #     "bert-base-uncased", num_labels=5
-    # )
+    model = AutoModelForMaskedLM.from_pretrained("bert-base-uncased", num_labels=5)
 
     pretrain(
         BertForMaskedLMWithLoss(model),
@@ -199,6 +200,8 @@ def main():
         device_ids=args.device_ids,
         resume=args.resume,
         lr=args.lr,
+        batch_size=args.batch_size,
+        num_epochs=args.num_epochs,
     )
 
 

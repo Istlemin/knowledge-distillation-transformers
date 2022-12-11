@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from model import ModelWithLoss, masked_lm_loss
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
-from transformers import BertForMaskedLM, BertForSequenceClassification
+from transformers import BertForMaskedLM, BertForSequenceClassification, BertConfig
 
 
 class KDLoss(nn.Module):
@@ -25,6 +25,62 @@ class KDPred(KDLoss):
         return F.mse_loss(teacher_output.logits, student_output.logits)
 
 
+class KDAttention(KDLoss):
+    def __init__(self, layer_map):
+        super().__init__()
+        self.layer_map = layer_map
+
+    def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
+        teacher_attentions = torch.stack(teacher_output.attentions)
+        student_attentions = torch.stack(student_output.attentions)
+        return F.mse_loss(teacher_attentions[self.layer_map], student_attentions)
+
+
+class KDHiddenStates(KDLoss):
+    def __init__(self, layer_map, teacher_cfg: BertConfig, student_cfg: BertConfig):
+        super().__init__()
+        self.layer_map = layer_map
+        self.student_to_teacher = nn.ModuleList(
+            [
+                nn.Linear(student_cfg.hidden_size, teacher_cfg.hidden_size)
+                for i in range(len(layer_map))
+            ]
+        )
+
+    def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
+        teacher_hidden_states = torch.stack(teacher_output.hidden_states)
+        student_hidden_states = torch.stack(student_output.hidden_states)
+        return torch.stack(
+            [
+                F.mse_loss(
+                    self.student_to_teacher[i](student_hidden_states[i]),
+                    teacher_hidden_states[self.layer_map[i]],
+                )
+                for i in range(len(self.layer_map))
+            ]
+        ).mean()
+
+
+class KDTransformerLayers(KDLoss):
+    def __init__(self, teacher_cfg: BertConfig, student_cfg: BertConfig):
+        super().__init__()
+
+        # Evenly spread out layer map
+        layer_map = [
+            i
+            * (teacher_cfg.num_hidden_layers - 1)
+            // (student_cfg.num_hidden_layers - 1)
+            for i in range(student_cfg.num_hidden_layers)
+        ]
+        self.kd_hidden_states = KDHiddenStates(layer_map, teacher_cfg, student_cfg)
+        self.kd_attention = KDAttention(layer_map)
+
+    def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
+        return self.kd_hidden_states(
+            teacher_output, student_output
+        ) + self.kd_attention(teacher_output, student_output)
+
+
 class KD_MLM(ModelWithLoss):
     def __init__(self, teacher: Model, student: Model, kd_losses: List[KDLoss]):
         super().__init__()
@@ -36,10 +92,18 @@ class KD_MLM(ModelWithLoss):
 
     def forward(self, input_ids, is_masked, output_ids):
         teacher_output = self.teacher.forward(
-            input_ids, attention_mask=~is_masked, return_dict=True
+            input_ids,
+            attention_mask=~is_masked,
+            return_dict=True,
+            output_hidden_states=True,
+            output_attentions=True,
         )
         student_output = self.student.forward(
-            input_ids, attention_mask=~is_masked, return_dict=True
+            input_ids,
+            attention_mask=~is_masked,
+            return_dict=True,
+            output_hidden_states=True,
+            output_attentions=True,
         )
 
         _, correct_predictions = masked_lm_loss(

@@ -33,7 +33,7 @@ from tqdm.auto import tqdm
 
 from typing import NamedTuple
 
-from kd import KD_MLM, KDPred
+from kd import KD_MLM, KDPred, KDTransformerLayers
 from pretrain import pretrain
 
 
@@ -50,6 +50,8 @@ def main():
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--device_ids", nargs="+", type=int, default=None)
     args = parser.parse_args()
 
@@ -69,12 +71,18 @@ def main():
     )
 
     pretrain(
-        KD_MLM(teacher, student, [KDPred()]),
+        KD_MLM(
+            teacher,
+            student,
+            [KDTransformerLayers(teacher.config, student.config), KDPred()],
+        ),
         args.dataset_path,
         checkpoint_path=args.checkpoint_path,
         device_ids=args.device_ids,
         resume=args.resume,
         lr=args.lr,
+        batch_size=args.batch_size,
+        num_epochs=args.num_epochs,
     )
 
 
