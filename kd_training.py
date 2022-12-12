@@ -74,7 +74,7 @@ def main():
         KD_MLM(
             teacher,
             student,
-            [KDTransformerLayers(teacher.config, student.config), KDPred()],
+            [KDTransformerLayers(teacher.config, student.config),KDPred()],
         ),
         args.dataset_path,
         checkpoint_path=args.checkpoint_path,

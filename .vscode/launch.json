@@ -27,9 +27,9 @@
             "program": "pretrain.py",
             "args": [
                 "--dataset",
-                "../wikipedia_mlm/",
+                "../wikipedia_mlm128/",
                 "--device_ids",
-                "0"
+                "0",
             ],
             "console": "integratedTerminal",
             "justMyCode": false
@@ -41,9 +41,11 @@
             "program": "kd_training.py",
             "args": [
                 "--dataset",
-                "../wikipedia_mlm/",
+                "../wikipedia_mlm128/",
                 "--device_ids",
-                "0"
+                "0",
+                "--teacher_model",
+                "../models/pretrained_bert_mlm.pt"
             ],
             "console": "integratedTerminal",
             "justMyCode": false

@@ -9,11 +9,11 @@
 
 seed=0
 dataset_path="../wikipedia_mlm128/"
-teacher_model_path="../models/pretrained_bert.pt" 
-checkpoint_path="../checkpoints/kd_pretrain_seed0" 
+teacher_model_path="../models/pretrained_bert_mlm.pt" 
+checkpoint_path="../checkpoints/kd_pretrain_onlypred_seed0" 
 
 
-#CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+CUDA_VISIBLE_DEVICES=2 \
 python3 kd_training.py \
     --dataset $dataset_path \
     --checkpoint_path $checkpoint_path \
@@ -22,8 +22,7 @@ python3 kd_training.py \
     --lr 1e-4 \
     --batch_size 8 \
     --num_epochs 5 \
-    --device_ids 0 1 2 3 \
-    #--resume \
+    --device_ids 0 \
     > log 2>&1
 
 

@@ -23,7 +23,7 @@ def masked_lm_loss(model_outputs, input_ids, is_masked, output_ids):
         model_outputs.logits * is_masked.reshape((batch_size, -1, 1)), dim=2
     )
     labels = output_ids * is_masked
-    correct_predictions = torch.sum((predictions == labels) * is_masked).item()
+    correct_predictions = torch.sum((predictions == labels) * is_masked)
     loss = torch.nn.functional.cross_entropy(
         model_outputs.logits.transpose(1, 2), output_ids
     )
@@ -47,6 +47,12 @@ def get_bert_config(config_name):
     if config_name == "base":
         return config
     if config_name == "tiny":
+        config.num_attention_heads = 12
+        config.intermediate_size = 1200
+        config.hidden_size = 312
+        config.num_hidden_layers = 4
+        return config
+    if config_name == "nano":
         config.num_attention_heads = 2
         config.intermediate_size = 512
         config.hidden_size = 128
@@ -67,3 +73,12 @@ def load_untrained_bert_base():
 
 def load_model_from_disk(path):
     return torch.load(path)
+
+
+if __name__ == "__main__":
+    """
+    Download models
+    """
+
+    pretrained_for_mlm = AutoModelForMaskedLM.from_config(get_bert_config("base"))
+    torch.save(pretrained_for_mlm, "../models/pretrained_bert_mlm.pt")

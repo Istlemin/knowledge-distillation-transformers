@@ -15,7 +15,11 @@ import argparse
 import torch
 import random
 import numpy as np
-from transformers import AutoModelForMaskedLM, BertForMaskedLM
+from transformers import (
+    AutoModelForMaskedLM,
+    BertForMaskedLM,
+    get_linear_schedule_with_warmup,
+)
 
 from dataset_loading import (
     load_glue_sentence_classification,
@@ -66,6 +70,7 @@ def run_epoch(
     dataloader: DataLoader,
     device: Device,
     optimizer: Optional[torch.optim.Optimizer] = None,
+    scheduler: torch.optim.lr_scheduler.LambdaLR = None,
 ):
     model.train()
 
@@ -76,9 +81,9 @@ def run_epoch(
     total_predictions = 0
 
     for i, batch in enumerate(dataloader):
-        tokens = batch.tokens[:, :10000].to(device)
-        masked_tokens = batch.masked_tokens[:, :10000].to(device)
-        is_masked = batch.is_masked[:, :10000].to(device)
+        tokens = batch.tokens[:, :].to(device)
+        masked_tokens = batch.masked_tokens[:, :].to(device)
+        is_masked = batch.is_masked[:, :].to(device)
         batch_size = len(tokens)
         if optimizer is not None:
             optimizer.zero_grad()
@@ -86,19 +91,26 @@ def run_epoch(
         loss, batch_correct_predictions = model(
             input_ids=masked_tokens, is_masked=is_masked, output_ids=tokens
         )
+        loss = loss.mean()
+        batch_correct_predictions = batch_correct_predictions.sum()
 
         total_predictions += torch.sum(is_masked)
         correct_predictions += batch_correct_predictions
 
         loss.backward()
         losses.append(loss.detach().cpu())
+
         if optimizer is not None:
             optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
+
         progress_bar.update(1)
         progress_bar.set_description(
             f"Loss: {loss.item():.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%",
             refresh=True,
         )
+
     loss = torch.mean(torch.stack(losses))
     return loss, correct_predictions / total_predictions
 
@@ -116,6 +128,9 @@ def pretrain(
 ):
 
     optimizer = Adam(model.parameters(), lr=lr, betas=[0.9, 0.999], weight_decay=0.01)
+    # scheduler = get_linear_schedule_with_warmup(
+    #     optimizer, num_warmup_steps=10000, num_training_steps=100000 * 60 * num_epochs
+    # )
 
     device = torch.device("cpu")
     if device_ids is not None:
@@ -144,7 +159,11 @@ def pretrain(
 
             model.train()
             train_loss, train_accuracy = run_epoch(
-                model, train_dataloader, optimizer=optimizer, device=device
+                model,
+                train_dataloader,
+                optimizer=optimizer,
+                scheduler=None,
+                device=device,
             )
             model.eval()
             print("Train loss:", train_loss, "\t\tTrain accuracy:", train_accuracy)
@@ -191,7 +210,7 @@ def main():
     else:
         model = load_model_from_disk(args.model_path)
 
-    model = AutoModelForMaskedLM.from_pretrained("bert-base-uncased", num_labels=5)
+    # model = AutoModelForMaskedLM.from_pretrained("bert-base-uncased", num_labels=5)
 
     pretrain(
         BertForMaskedLMWithLoss(model),

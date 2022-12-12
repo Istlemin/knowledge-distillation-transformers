@@ -22,7 +22,7 @@ class KDPred(KDLoss):
         super().__init__()
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
-        return F.mse_loss(teacher_output.logits, student_output.logits)
+        return F.mse_loss(teacher_output.logits, student_output.logits) / 10
 
 
 class KDAttention(KDLoss):
@@ -67,18 +67,20 @@ class KDTransformerLayers(KDLoss):
 
         # Evenly spread out layer map
         layer_map = [
-            i
-            * (teacher_cfg.num_hidden_layers - 1)
-            // (student_cfg.num_hidden_layers - 1)
+            i * (teacher_cfg.num_hidden_layers) // (student_cfg.num_hidden_layers)
             for i in range(student_cfg.num_hidden_layers)
         ]
         self.kd_hidden_states = KDHiddenStates(layer_map, teacher_cfg, student_cfg)
         self.kd_attention = KDAttention(layer_map)
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
-        return self.kd_hidden_states(
-            teacher_output, student_output
-        ) + self.kd_attention(teacher_output, student_output)
+        torch.cuda.synchronize()
+        attention_loss = self.kd_attention(teacher_output, student_output)
+        torch.cuda.synchronize()
+        hidden_states_loss = self.kd_hidden_states(teacher_output, student_output)
+        torch.cuda.synchronize()
+        #print(attention_loss * 1000, hidden_states_loss)
+        return attention_loss * 1000 + hidden_states_loss
 
 
 class KD_MLM(ModelWithLoss):
@@ -106,6 +108,8 @@ class KD_MLM(ModelWithLoss):
             output_attentions=True,
         )
 
+        torch.cuda.synchronize()
+
         _, correct_predictions = masked_lm_loss(
             student_output, input_ids, is_masked, output_ids
         )
@@ -113,4 +117,6 @@ class KD_MLM(ModelWithLoss):
         loss = torch.zeros((1,), device=input_ids.device)
         for kd_loss in self.kd_losses:
             loss += kd_loss(teacher_output, student_output)
+            #sprint(loss)
+        torch.cuda.synchronize()
         return loss, correct_predictions
