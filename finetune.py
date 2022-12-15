@@ -1,5 +1,6 @@
 from glob import glob
 from pathlib import Path
+from tokenize import Token
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
 import torch
@@ -10,11 +11,12 @@ import time
 from pathlib import Path
 import argparse
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
 import random
 import numpy as np
 from dataset_loading import load_glue_sentence_classification, load_tokenized_dataset
-from finetune import finetune
-from model import load_pretrained_bert_base, load_model_from_disk
+from distributed import distributed_setup
+from model import BertForSequenceClassificationWithLoss, load_pretrained_bert_base, load_model_from_disk
 
 
 from tqdm.auto import tqdm
@@ -56,35 +58,45 @@ def run_epoch(
 
 
 def finetune(
-    model: torch.nn.Module,
+    gpu_idx: int,
+    model: ModelWithLoss,
     tokenized_datasets: DatasetDict,
-    lr=1e-5,
-    checkpoint_path: Optional[Path] = None,
-    device_ids=None,
-    resume=False,
+    args,
 ):
-    train_dataloader = DataLoader(
-        tokenized_datasets["train"], shuffle=True, batch_size=32
-    )
-    eval_dataloader = DataLoader(tokenized_datasets["dev"], shuffle=True, batch_size=32)
 
-    optimizer = Adam(model.parameters(), lr=lr)
+    if gpu_idx != -1:
+        distributed_setup(gpu_idx, args.num_gpus)
+        model = model.to(gpu_idx)
+        model = DDP(model, device_ids=[gpu_idx])
+        device = torch.device(gpu_idx)
+    else:
+        device = torch.device("cpu")
+
+    def get_dataloader(dataset):
+        sampler = torch.utils.data.distributed.DistributedSampler(
+            dataset,
+            num_replicas=args.num_gpus,
+            rank=gpu_idx,
+            shuffle=True,
+        )
+        return DataLoader(
+            dataset,
+            sampler=sampler,
+            batch_size=args.batch_size // args.num_gpus,
+        )
+
+    train_dataloader = get_dataloader(tokenized_datasets["train"])
+    eval_dataloader = get_dataloader(tokenized_datasets["dev"])
+
+    optimizer = Adam(model.parameters(), lr=args.lr)
     num_epochs = 6
 
-    device = torch.device("cpu")
-    if device_ids is not None:
-        if not torch.cuda.is_available():
-            print("WARNING: [device_ids] was specified but CUDA is not available")
-        else:
-            device = torch.device("cuda")
-            model = torch.nn.DataParallel(model, device_ids=device_ids)
-            model.to(device)
-
     start_epoch = 0
-    if checkpoint_path is not None:
-        checkpoint_path.mkdir(parents=True, exist_ok=True)
-        if resume:
-            latest_checkpoint = sorted(glob(str(checkpoint_path / "*")))[-1]
+
+    if args.checkpoint_path is not None:
+        args.checkpoint_path.mkdir(parents=True, exist_ok=True)
+        if args.resume:
+            latest_checkpoint = sorted(glob(str(args.checkpoint_path / "*")))[-1]
             checkpoint = torch.load(latest_checkpoint)
             start_epoch = checkpoint["epochs"]
             model.module.load_state_dict(checkpoint["model_state_dict"])
@@ -102,7 +114,7 @@ def finetune(
         print("Train loss:", train_loss, "\t\tTrain accuracy:", train_accuracy)
         print("Test loss:", test_loss, "\t\tTest accuracy:", test_accuracy)
 
-        if checkpoint_path is not None:
+        if gpu_idx == 0 and args.checkpoint_path is not None:
             print("Saving checkpoint...")
 
             if type(model) == torch.nn.DataParallel:
@@ -120,7 +132,7 @@ def finetune(
                     "train_accuracy": train_accuracy,
                     "test_accuracy": test_accuracy,
                 },
-                checkpoint_path / time.strftime("%Y-%m-%d_%H:%M:%S"),
+                args.checkpoint_path / time.strftime("%Y-%m-%d_%H:%M:%S"),
             )
 
 
@@ -147,13 +159,12 @@ def main():
         model = load_pretrained_bert_base()
     else:
         model = load_model_from_disk(args.model_path)
-    finetune(
-        model,
-        datasets,
-        checkpoint_path=args.checkpoint_path,
-        device_ids=args.device_ids,
-        resume=args.resume,
-        lr=args.lr,
+
+    torch.multiprocessing.spawn(
+        finetune,
+        args=(BertForSequenceClassificationWithLoss(model), datasets, args),
+        nprocs=args.num_gpus,
+        join=True,
     )
 
 

@@ -9,6 +9,11 @@ import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
 from torch.optim import Adam
+import torch.nn as nn
+import torch.optim as optim
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+import os
 import time
 from pathlib import Path
 import argparse
@@ -38,6 +43,7 @@ from model import (
 from tqdm.auto import tqdm
 
 from typing import NamedTuple
+from distributed import distributed_setup, distributed_cleanup
 
 
 class MLMBatch(NamedTuple):
@@ -107,7 +113,7 @@ def run_epoch(
 
         progress_bar.update(1)
         progress_bar.set_description(
-            f"Loss: {loss.item():.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%",
+            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}% device:{device}",
             refresh=True,
         )
 
@@ -116,45 +122,53 @@ def run_epoch(
 
 
 def pretrain(
+    gpu_idx: int,
     model: ModelWithLoss,
-    dataset_path: Path,
-    lr=1e-4,
-    num_epochs=3,
-    batch_size=8,
-    checkpoint_path: Optional[Path] = None,
-    checkpoint_every_nth=1000,
-    device_ids=None,
-    resume=False,
+    args,
 ):
+    if gpu_idx != -1:
+        distributed_setup(gpu_idx, args.num_gpus)
+        model = model.to(gpu_idx)
+        model = DDP(model, device_ids=[gpu_idx])
+        device = torch.device(gpu_idx)
+    else:
+        device = torch.device("cpu")
 
-    optimizer = Adam(model.parameters(), lr=lr, betas=[0.9, 0.999], weight_decay=0.01)
+    optimizer = Adam(
+        model.parameters(), lr=args.lr, betas=[0.9, 0.999], weight_decay=0.01
+    )
     # scheduler = get_linear_schedule_with_warmup(
     #     optimizer, num_warmup_steps=10000, num_training_steps=100000 * 60 * num_epochs
     # )
-
-    device = torch.device("cpu")
-    if device_ids is not None:
-        if not torch.cuda.is_available():
-            print("WARNING: [device_ids] was specified but CUDA is not available")
-        else:
-            device = torch.device("cuda")
-            model = torch.nn.DataParallel(model, device_ids=device_ids)
-            model.to(device)
+    scheduler = None
 
     start_epoch = 0
-    if checkpoint_path is not None:
-        checkpoint_path.mkdir(parents=True, exist_ok=True)
-        if resume:
-            latest_checkpoint = sorted(glob(str(checkpoint_path / "*")))[-1]
+    if args.checkpoint_path is not None:
+        args.checkpoint_path.mkdir(parents=True, exist_ok=True)
+        if args.resume:
+            latest_checkpoint = sorted(glob(str(args.checkpoint_path / "*")))[-1]
+            print("Resuming from checkpoint: ", latest_checkpoint)
             checkpoint = torch.load(latest_checkpoint)
-            start_epoch = checkpoint["epochs"]
-            model.module.load_state_dict(checkpoint["model_state_dict"])
+            # start_epoch = checkpoint["epochs"]
+            model.load_state_dict(checkpoint["model_state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-    for epoch in range(start_epoch, num_epochs):
+    for epoch in range(start_epoch, args.num_epochs):
         for dataset_batch_idx in range(60):
-            dataset = MLMDataset(dataset_path / str(dataset_batch_idx))
-            train_dataloader = DataLoader(dataset, shuffle=True, batch_size=batch_size)
+            dataset = MLMDataset(args.dataset_path / str(dataset_batch_idx))
+
+            train_sampler = torch.utils.data.distributed.DistributedSampler(
+                dataset, num_replicas=args.num_gpus, rank=gpu_idx, shuffle=True
+            )
+
+            train_dataloader = DataLoader(
+                dataset,
+                shuffle=(train_sampler is None),
+                batch_size=(args.batch_size // args.num_gpus),
+                num_workers=4,
+                pin_memory=True,
+                sampler=train_sampler,
+            )
             print(f"EPOCH {epoch}:")
 
             model.train()
@@ -162,30 +176,33 @@ def pretrain(
                 model,
                 train_dataloader,
                 optimizer=optimizer,
-                scheduler=None,
+                scheduler=scheduler,
                 device=device,
             )
-            model.eval()
-            print("Train loss:", train_loss, "\t\tTrain accuracy:", train_accuracy)
 
-            if checkpoint_path is not None:
-                print("Saving checkpoint...")
+            if gpu_idx == 0:
+                print("Train loss:", train_loss, "\t\tTrain accuracy:", train_accuracy)
+                if args.checkpoint_path is not None:
+                    print("Saving checkpoint...")
 
-                if type(model) == torch.nn.DataParallel:
-                    model_state_dict = model.module.state_dict()
-                else:
-                    model_state_dict = model.state_dict()
+                    if type(model) == torch.nn.DataParallel:
+                        model_state_dict = model.module.state_dict()
+                    else:
+                        model_state_dict = model.state_dict()
 
-                torch.save(
-                    {
-                        "epochs": epoch + 1,
-                        "model_state_dict": model_state_dict,
-                        "optimizer_state_dict": optimizer.state_dict(),
-                        "train_loss": train_loss,
-                        "train_accuracy": train_accuracy,
-                    },
-                    checkpoint_path / f"epoch{epoch}",
-                )
+                    torch.save(
+                        {
+                            "epochs": epoch + 1,
+                            "model_state_dict": model_state_dict,
+                            "optimizer_state_dict": optimizer.state_dict(),
+                            "train_loss": train_loss,
+                            "train_accuracy": train_accuracy,
+                        },
+                        args.checkpoint_path / f"epoch{epoch}",
+                    )
+
+    if gpu_idx != -1:
+        distributed_cleanup()
 
 
 def main():
@@ -198,7 +215,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--num_epochs", type=int, default=3)
-    parser.add_argument("--device_ids", nargs="+", type=int, default=None)
+    parser.add_argument("--num_gpus", type=int, default=0)
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -212,15 +229,11 @@ def main():
 
     # model = AutoModelForMaskedLM.from_pretrained("bert-base-uncased", num_labels=5)
 
-    pretrain(
-        BertForMaskedLMWithLoss(model),
-        args.dataset_path,
-        checkpoint_path=args.checkpoint_path,
-        device_ids=args.device_ids,
-        resume=args.resume,
-        lr=args.lr,
-        batch_size=args.batch_size,
-        num_epochs=args.num_epochs,
+    torch.multiprocessing.spawn(
+        pretrain,
+        args=(BertForMaskedLMWithLoss(model), args),
+        nprocs=args.num_gpus,
+        join=True,
     )
 
 

@@ -74,13 +74,10 @@ class KDTransformerLayers(KDLoss):
         self.kd_attention = KDAttention(layer_map)
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
-        torch.cuda.synchronize()
         attention_loss = self.kd_attention(teacher_output, student_output)
-        torch.cuda.synchronize()
         hidden_states_loss = self.kd_hidden_states(teacher_output, student_output)
-        torch.cuda.synchronize()
-        #print(attention_loss * 1000, hidden_states_loss)
-        return attention_loss * 1000 + hidden_states_loss
+        # print(attention_loss * 1000, hidden_states_loss)
+        return attention_loss * 100 + hidden_states_loss * 0.00001
 
 
 class KD_MLM(ModelWithLoss):
@@ -108,8 +105,6 @@ class KD_MLM(ModelWithLoss):
             output_attentions=True,
         )
 
-        torch.cuda.synchronize()
-
         _, correct_predictions = masked_lm_loss(
             student_output, input_ids, is_masked, output_ids
         )
@@ -117,6 +112,28 @@ class KD_MLM(ModelWithLoss):
         loss = torch.zeros((1,), device=input_ids.device)
         for kd_loss in self.kd_losses:
             loss += kd_loss(teacher_output, student_output)
-            #sprint(loss)
-        torch.cuda.synchronize()
+            # sprint(loss)
+        return loss, correct_predictions
+
+
+class KD_SequenceClassification(ModelWithLoss):
+    def __init__(self, teacher: Model, student: Model, kd_losses: List[KDLoss]):
+        super().__init__()
+
+        self.kd_losses = nn.ModuleList(kd_losses)
+        self.teacher = teacher
+        self.teacher.requires_grad_(False)
+        self.student = student
+
+    def forward(self, **batch):
+        teacher_output = self.teacher(**batch)
+        student_output = self.student(**batch)
+
+        predictions = torch.argmax(student_output.logits, dim=1)
+        correct_predictions += torch.sum(predictions == batch["labels"])
+
+        loss = torch.zeros((1,), device=batch["labels"].device)
+        for kd_loss in self.kd_losses:
+            loss += kd_loss(teacher_output, student_output)
+            # sprint(loss)
         return loss, correct_predictions

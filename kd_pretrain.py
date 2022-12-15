@@ -38,6 +38,7 @@ from pretrain import pretrain
 
 
 def main():
+    print("KD Training")
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", dest="dataset_path", type=Path, required=True)
     parser.add_argument(
@@ -52,7 +53,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--num_epochs", type=int, default=3)
-    parser.add_argument("--device_ids", nargs="+", type=int, default=None)
+    parser.add_argument("--num_gpus", type=int, default=0)
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -70,19 +71,17 @@ def main():
         get_bert_config(args.student_model_config)
     )
 
-    pretrain(
-        KD_MLM(
-            teacher,
-            student,
-            [KDTransformerLayers(teacher.config, student.config),KDPred()],
-        ),
-        args.dataset_path,
-        checkpoint_path=args.checkpoint_path,
-        device_ids=args.device_ids,
-        resume=args.resume,
-        lr=args.lr,
-        batch_size=args.batch_size,
-        num_epochs=args.num_epochs,
+    model = KD_MLM(
+        teacher,
+        student,
+        [KDTransformerLayers(teacher.config, student.config), KDPred()],
+    )
+
+    torch.multiprocessing.spawn(
+        pretrain,
+        args=(model, args),
+        nprocs=args.num_gpus,
+        join=True,
     )
 
 
