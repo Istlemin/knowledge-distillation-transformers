@@ -1,7 +1,7 @@
 from collections import namedtuple
 from glob import glob
+import logging
 from pathlib import Path
-from turtle import forward
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
 from datasets.arrow_dataset import Dataset
@@ -137,25 +137,31 @@ def pretrain(
     optimizer = Adam(
         model.parameters(), lr=args.lr, betas=[0.9, 0.999], weight_decay=0.01
     )
-    # scheduler = get_linear_schedule_with_warmup(
-    #     optimizer, num_warmup_steps=10000, num_training_steps=100000 * 60 * num_epochs
-    # )
+
     scheduler = None
+    if args.scheduler == "linear_warmup":
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=10000,
+            num_training_steps=100000 * 60 * args.num_epochs,
+        )
 
     start_epoch = 0
     if args.checkpoint_path is not None:
         args.checkpoint_path.mkdir(parents=True, exist_ok=True)
         if args.resume:
-            latest_checkpoint = sorted(glob(str(args.checkpoint_path / "*")))[-1]
-            print("Resuming from checkpoint: ", latest_checkpoint)
-            checkpoint = torch.load(latest_checkpoint)
-            # start_epoch = checkpoint["epochs"]
-            model.load_state_dict(checkpoint["model_state_dict"])
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            checkpoints = glob(str(args.checkpoint_path / "checkpoint_*"))
+            if len(checkpoints):
+                latest_checkpoint = sorted(checkpoints)[-1]
+                print("Resuming from checkpoint: ", latest_checkpoint)
+                checkpoint = torch.load(latest_checkpoint)
+                start_epoch = checkpoint["epochs"]
+                model.load_state_dict(checkpoint["model_state_dict"])
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
     for epoch in range(start_epoch, args.num_epochs):
-        for dataset_batch_idx in range(60):
-            dataset = MLMDataset(args.dataset_path / str(dataset_batch_idx))
+        for dataset_part_idx in range(args.dataset_parts):
+            dataset = MLMDataset(args.dataset_path / str(dataset_part_idx))
 
             train_sampler = torch.utils.data.distributed.DistributedSampler(
                 dataset, num_replicas=args.num_gpus, rank=gpu_idx, shuffle=True
@@ -169,7 +175,7 @@ def pretrain(
                 pin_memory=True,
                 sampler=train_sampler,
             )
-            print(f"EPOCH {epoch}:")
+            print(f"EPOCH {epoch}, PART {dataset_part_idx}:")
 
             model.train()
             train_loss, train_accuracy = run_epoch(
@@ -198,7 +204,7 @@ def pretrain(
                             "train_loss": train_loss,
                             "train_accuracy": train_accuracy,
                         },
-                        args.checkpoint_path / f"epoch{epoch}",
+                        args.checkpoint_path / f"checkpoint_epoch{epoch:0>3}",
                     )
 
     if gpu_idx != -1:
@@ -216,7 +222,13 @@ def main():
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--num_gpus", type=int, default=0)
+    parser.add_argument("--scheduler", type=str)
+    parser.add_argument("--dataset_parts", type=int, default=60)
     args = parser.parse_args()
+
+    if args.checkpoint_path is not None:
+        args.checkpoint_path.mkdir(exist_ok=True)
+        logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.DEBUG)
 
     torch.manual_seed(args.seed)
     random.seed(args.seed)

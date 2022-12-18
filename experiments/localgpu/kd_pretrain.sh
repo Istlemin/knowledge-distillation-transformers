@@ -1,11 +1,4 @@
 #!/bin/bash
-#SBATCH --nodes=1 --cpus-per-task 16
-#SBATCH --time=8:00:00
-#SBATCH --gres=gpu:4
-#SBATCH -J BERTbase_SST2_seed0
-#module load pytorch/1.12.1
-#module load cuda/10.2
-#source activate torch
 
 seed=0
 dataset_path="../wikipedia_mlm128/"

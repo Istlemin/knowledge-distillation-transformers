@@ -1,4 +1,4 @@
-from typing import List, NamedTuple, Union
+from typing import Dict, List, NamedTuple, Union
 
 import torch
 from torch import nn
@@ -77,7 +77,7 @@ class KDTransformerLayers(KDLoss):
         attention_loss = self.kd_attention(teacher_output, student_output)
         hidden_states_loss = self.kd_hidden_states(teacher_output, student_output)
         # print(attention_loss * 1000, hidden_states_loss)
-        return attention_loss * 100 + hidden_states_loss * 0.00001
+        return attention_loss * 100 + hidden_states_loss * 0.1
 
 
 class KD_MLM(ModelWithLoss):
@@ -117,23 +117,42 @@ class KD_MLM(ModelWithLoss):
 
 
 class KD_SequenceClassification(ModelWithLoss):
-    def __init__(self, teacher: Model, student: Model, kd_losses: List[KDLoss]):
+    def __init__(
+        self,
+        teacher: Model,
+        student: Model,
+        kd_losses_dict: Dict[str, KDLoss],
+        active_kd_losses: List[str],
+    ):
         super().__init__()
 
-        self.kd_losses = nn.ModuleList(kd_losses)
+        self.kd_losses = nn.ModuleDict(kd_losses_dict)
+        self.active_kd_losses = active_kd_losses
         self.teacher = teacher
         self.teacher.requires_grad_(False)
         self.student = student
 
-    def forward(self, **batch):
-        teacher_output = self.teacher(**batch)
-        student_output = self.student(**batch)
+    def forward(self, epoch=-1, **batch):
+        teacher_output = self.teacher(
+            return_dict=True, output_hidden_states=True, output_attentions=True, **batch
+        )
+        student_output = self.student(
+            return_dict=True, output_hidden_states=True, output_attentions=True, **batch
+        )
 
         predictions = torch.argmax(student_output.logits, dim=1)
-        correct_predictions += torch.sum(predictions == batch["labels"])
+        correct_predictions = torch.sum(predictions == batch["labels"])
 
         loss = torch.zeros((1,), device=batch["labels"].device)
-        for kd_loss in self.kd_losses:
-            loss += kd_loss(teacher_output, student_output)
+
+        for kd_loss_name, kd_loss in self.kd_losses.items():
+            curr_loss = kd_loss(teacher_output, student_output)
+
+            if kd_loss_name in self.active_kd_losses:
+                loss += curr_loss
+            else:
+                # hack to make sure all losses are part of loss computation,
+                # needed for DistributedDataParallell
+                loss += 0 * curr_loss
             # sprint(loss)
         return loss, correct_predictions

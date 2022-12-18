@@ -1,7 +1,7 @@
 from collections import namedtuple
 from glob import glob
+import logging
 from pathlib import Path
-from turtle import forward
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
 from datasets.arrow_dataset import Dataset
@@ -54,7 +54,13 @@ def main():
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--num_gpus", type=int, default=0)
+    parser.add_argument("--scheduler", type=str)
+    parser.add_argument("--dataset_parts", type=int, default=60)
     args = parser.parse_args()
+
+    if args.checkpoint_path is not None:
+        args.checkpoint_path.mkdir(exist_ok=True)
+        logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.DEBUG)
 
     torch.manual_seed(args.seed)
     random.seed(args.seed)

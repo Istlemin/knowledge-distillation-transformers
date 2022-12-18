@@ -1,7 +1,7 @@
 from collections import namedtuple
 from glob import glob
+import logging
 from pathlib import Path
-from turtle import forward
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
 from datasets.arrow_dataset import Dataset
@@ -47,6 +47,7 @@ def main():
         dest="teacher_model_path",
         type=Path,
     )
+    parser.add_argument("--student_model_path", type=str)
     parser.add_argument("--student_model_config", type=str, default="tiny")
     parser.add_argument("--checkpoint_path", type=Path)
     parser.add_argument("--resume", action="store_true")
@@ -55,11 +56,22 @@ def main():
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--num_gpus", type=int, default=0)
+    parser.add_argument(
+        "--kd_losses", nargs="+", default=["transformer_layer", "prediction_layer"]
+    )
     args = parser.parse_args()
+
+    if args.checkpoint_path is not None:
+        args.checkpoint_path.mkdir(exist_ok=True)
+        logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.DEBUG)
 
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
+
+    datasets = load_tokenized_dataset(
+        args.dataset_path, load_glue_sentence_classification
+    )
 
     teacher = load_model_from_disk(args.teacher_model_path)
 
@@ -70,15 +82,19 @@ def main():
             get_bert_config(args.student_model_config)
         )
 
+    kd_losses_dict = {
+        "transformer_layer": KDTransformerLayers(teacher.config, student.config),
+        "prediction_layer": KDPred(),
+    }
+    active_kd_losses = args.kd_losses
+
     model = KD_SequenceClassification(
-        teacher,
-        student,
-        [KDTransformerLayers(teacher.config, student.config), KDPred()],
+        teacher, student, kd_losses_dict, active_kd_losses
     )
 
     torch.multiprocessing.spawn(
         finetune,
-        args=(model, args),
+        args=(model, datasets, args),
         nprocs=args.num_gpus,
         join=True,
     )

@@ -1,0 +1,29 @@
+#!/bin/bash
+#SBATCH --nodes=1 --cpus-per-task 32
+#SBATCH --time=24:00:00
+#SBATCH --gres=gpu:8
+#SBATCH -J kd_pretrain_lr1e-4_seed0
+module load pytorch/1.9.0
+source activate torch1.9
+
+base_url="/jmain02/home/J2AD015/axf03/fxe31-axf03/project/"
+seed=0
+dataset_path=$base_url"wikipedia_mlm128/"
+teacher_model_path=$base_url"models/pretrained_bert_mlm.pt" 
+checkpoint_path=$base_url"checkpoints/kd_pretrain_lr1e-4_seed0" 
+
+
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+
+python3 /jmain02/home/J2AD015/axf03/fxe31-axf03/project/knowledge-distillation-transformers/kd_pretrain.py \
+    --dataset $dataset_path \
+    --checkpoint_path $checkpoint_path \
+    --teacher_model $teacher_model_path \
+    --seed $seed \
+    --lr 1e-4 \
+    --batch_size 256 \
+    --num_epochs 4 \
+    --num_gpus 8 \
+    > /jmain02/home/J2AD015/axf03/fxe31-axf03/project/knowledge-distillation-transformers/jadelog 2>&1
+
+
