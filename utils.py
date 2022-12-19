@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Optional
 import torch.distributed as dist
 import random
-
+import numpy 
+import torch
 
 def distributed_setup(rank, world_size, port):
     os.environ["MASTER_ADDR"] = "localhost"
@@ -20,10 +21,17 @@ def distributed_cleanup():
 def setup_logging(path: Optional[Path] = None):
     handlers = [logging.StreamHandler()]
     if path is not None:
-        path.mkdir(exist_ok=True)
+        path.mkdir(exist_ok=True, parents=True)
         path = path / "log"
         path.unlink(missing_ok=True)
         handlers.append(logging.FileHandler(path))
 
     logging.basicConfig(level=logging.INFO, handlers=handlers)
     logging.info(f"Logfile: {path}")
+
+def set_random_seed(seed):
+    random.seed(seed)                          
+    numpy.random.seed(seed)                       
+    torch.manual_seed(seed)                    
+    torch.cuda.manual_seed(seed)               
+    torch.cuda.manual_seed_all(seed)           

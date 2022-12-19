@@ -43,7 +43,7 @@ from model import (
 from tqdm.auto import tqdm
 
 from typing import NamedTuple
-from utils import distributed_setup, distributed_cleanup, setup_logging
+from utils import distributed_setup, distributed_cleanup, set_random_seed, setup_logging
 
 
 class MLMBatch(NamedTuple):
@@ -113,7 +113,7 @@ def run_epoch(
 
         progress_bar.update(1)
         progress_bar.set_description(
-            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}% device:{device}",
+            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}, lr:{scheduler.get_last_lr()}",
             refresh=True,
         )
 
@@ -126,6 +126,7 @@ def pretrain(
     model: ModelWithLoss,
     args,
 ):
+    set_random_seed(args.seed)
     if gpu_idx != -1:
         distributed_setup(gpu_idx, args.num_gpus, args.port)
         model = model.to(gpu_idx)
@@ -145,10 +146,11 @@ def pretrain(
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
             num_warmup_steps=10000,
-            num_training_steps=100000 * 60 * args.num_epochs,
+            num_training_steps=5000 * args.dataset_parts * args.num_epochs,
         )
 
     start_epoch = 0
+    start_part = 0
     if args.checkpoint_path is not None:
         args.checkpoint_path.mkdir(parents=True, exist_ok=True)
         if args.resume:
@@ -158,11 +160,13 @@ def pretrain(
                 logging.info("Resuming from checkpoint: ", latest_checkpoint)
                 checkpoint = torch.load(latest_checkpoint)
                 start_epoch = checkpoint["epochs"]
+                if "parts" in checkpoint:
+                    start_part = checkpoint["parts"]
                 model.load_state_dict(checkpoint["model_state_dict"])
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
     for epoch in range(start_epoch, args.num_epochs):
-        for dataset_part_idx in range(args.dataset_parts):
+        for dataset_part_idx in range(start_part, args.dataset_parts):
             dataset = MLMDataset(args.dataset_path / str(dataset_part_idx))
 
             train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -189,7 +193,9 @@ def pretrain(
             )
 
             if gpu_idx == 0:
-                logging.info(f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}")
+                logging.info(
+                    f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}"
+                )
                 if args.checkpoint_path is not None:
                     logging.info("Saving checkpoint...")
 
@@ -201,6 +207,7 @@ def pretrain(
                     torch.save(
                         {
                             "epochs": epoch + 1,
+                            "parts": dataset_part_idx + 1,
                             "model_state_dict": model_state_dict,
                             "optimizer_state_dict": optimizer.state_dict(),
                             "train_loss": train_loss,
@@ -208,6 +215,7 @@ def pretrain(
                         },
                         args.checkpoint_path / f"checkpoint_epoch{epoch:0>3}",
                     )
+        start_part = 0
 
     if gpu_idx != -1:
         distributed_cleanup()
@@ -229,10 +237,7 @@ def main():
     parser.add_argument("--dataset_parts", type=int, default=60)
     args = parser.parse_args()
 
-    torch.manual_seed(args.seed)
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-
+    set_random_seed(args.seed)
     if args.model_path is None:
         model = AutoModelForMaskedLM.from_config(get_bert_config("tiny"))
     else:

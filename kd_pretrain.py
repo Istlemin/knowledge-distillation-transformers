@@ -35,6 +35,7 @@ from typing import NamedTuple
 
 from kd import KD_MLM, KDPred, KDTransformerLayers
 from pretrain import pretrain
+from utils import set_random_seed
 
 
 def main():
@@ -59,15 +60,7 @@ def main():
     parser.add_argument("--dataset_parts", type=int, default=60)
     args = parser.parse_args()
 
-    if args.checkpoint_path is not None:
-        print("Checkpoint path:", args.checkpoint_path)
-        args.checkpoint_path.mkdir(exist_ok=True)
-        logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.DEBUG)
-
-    torch.manual_seed(args.seed)
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-
+    set_random_seed(args.seed)
     if args.teacher_model_path is not None:
         teacher = load_model_from_disk(args.teacher_model_path)
     else:

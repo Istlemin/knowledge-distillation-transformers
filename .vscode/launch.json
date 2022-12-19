@@ -63,7 +63,7 @@
                 "--dataset",
                 "../GLUE-baselines/glue_data/SST-2/",
                 "--num_gpus",
-                "2",
+                "1",
                 "--teacher_model",
                 "../models/finetuned_bert_base_ss2_92.4%.pt",
                 // "--checkpoint_path",

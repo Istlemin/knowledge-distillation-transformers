@@ -36,6 +36,7 @@ from typing import NamedTuple
 
 from kd import KD_MLM, KDPred, KDTransformerLayers, KD_SequenceClassification
 from pretrain import pretrain
+from utils import set_random_seed
 
 
 def main():
@@ -62,14 +63,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.checkpoint_path is not None:
-        print("Checkpoint path:", args.checkpoint_path)
-        args.checkpoint_path.mkdir(exist_ok=True)
-        logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.INFO)
-
-    torch.manual_seed(args.seed)
-    random.seed(args.seed)
-    np.random.seed(args.seed)
+    set_random_seed(args.seed)
 
     datasets = load_tokenized_dataset(
         args.dataset_path, load_glue_sentence_classification

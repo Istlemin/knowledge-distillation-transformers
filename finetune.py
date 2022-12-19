@@ -15,7 +15,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import random
 import numpy as np
 from dataset_loading import load_glue_sentence_classification, load_tokenized_dataset
-from utils import distributed_cleanup, distributed_setup, setup_logging
+from utils import distributed_cleanup, distributed_setup, set_random_seed, setup_logging
 from model import (
     BertForSequenceClassificationWithLoss,
     load_pretrained_bert_base,
@@ -73,6 +73,7 @@ def finetune(
     args,
 ):
 
+    set_random_seed(args.seed)
     if gpu_idx != -1:
         distributed_setup(gpu_idx, args.num_gpus, args.port)
         model = model.to(gpu_idx)
@@ -170,9 +171,7 @@ def main():
     parser.add_argument("--device_ids", nargs="+", type=int, default=None)
     args = parser.parse_args()
 
-    torch.manual_seed(args.seed)
-    random.seed(args.seed)
-    np.random.seed(args.seed)
+    set_random_seed(args.seed)
 
     datasets = load_tokenized_dataset(
         args.dataset_path, load_glue_sentence_classification

@@ -31,7 +31,7 @@ python3 kd_finetune.py \
     --seed $seed \
     --lr 2e-5 \
     --batch_size 24 \
-    --num_epochs 5 \
+    --num_epochs 15 \
     --num_gpus 4 \
     --kd_losses prediction_layer \
     --port 12346 \
