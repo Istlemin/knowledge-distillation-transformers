@@ -59,6 +59,7 @@ def main():
     args = parser.parse_args()
 
     if args.checkpoint_path is not None:
+        print("Checkpoint path:", args.checkpoint_path)
         args.checkpoint_path.mkdir(exist_ok=True)
         logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.DEBUG)
 
@@ -80,7 +81,7 @@ def main():
     model = KD_MLM(
         teacher,
         student,
-        [KDTransformerLayers(teacher.config, student.config), KDPred()],
+        [KDTransformerLayers(teacher.config, student.config)],
     )
 
     torch.multiprocessing.spawn(

@@ -1,8 +1,9 @@
 import os
 import torch.distributed as dist
+import random
 
 
-def distributed_setup(rank, world_size, port=12345):
+def distributed_setup(rank, world_size, port=12347):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 

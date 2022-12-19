@@ -62,6 +62,7 @@ def main():
     args = parser.parse_args()
 
     if args.checkpoint_path is not None:
+        print("Checkpoint path:", args.checkpoint_path)
         args.checkpoint_path.mkdir(exist_ok=True)
         logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.DEBUG)
 

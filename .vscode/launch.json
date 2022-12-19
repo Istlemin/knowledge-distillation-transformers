@@ -35,6 +35,26 @@
             "justMyCode": false
         },
         {
+            "name": "KD Pretrain",
+            "type": "python",
+            "request": "launch",
+            "program": "kd_pretrain.py",
+            "args": [
+                "--dataset",
+                "../wikipedia_mlm128/",
+                "--teacher_model",
+                "../models/pretrained_bert_mlm.pt",
+                "--scheduler",
+                "linear_warmup",
+                "--num_gpus",
+                "2",
+                "--num_epochs",
+                "4",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "KD Finetune",
             "type": "python",
             "request": "launch",
