@@ -53,6 +53,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--num_epochs", type=int, default=3)
+    parser.add_argument("--port", type=int, default=12345)
     parser.add_argument("--num_gpus", type=int, default=0)
     parser.add_argument("--scheduler", type=str)
     parser.add_argument("--dataset_parts", type=int, default=60)

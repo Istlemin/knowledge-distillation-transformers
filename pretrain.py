@@ -43,7 +43,7 @@ from model import (
 from tqdm.auto import tqdm
 
 from typing import NamedTuple
-from distributed import distributed_setup, distributed_cleanup
+from utils import distributed_setup, distributed_cleanup, setup_logging
 
 
 class MLMBatch(NamedTuple):
@@ -127,12 +127,14 @@ def pretrain(
     args,
 ):
     if gpu_idx != -1:
-        distributed_setup(gpu_idx, args.num_gpus)
+        distributed_setup(gpu_idx, args.num_gpus, args.port)
         model = model.to(gpu_idx)
         model = DDP(model, device_ids=[gpu_idx], find_unused_parameters=True)
         device = torch.device(gpu_idx)
     else:
         device = torch.device("cpu")
+
+    setup_logging(args.checkpoint_path)
 
     optimizer = Adam(
         model.parameters(), lr=args.lr, betas=[0.9, 0.999], weight_decay=0.01
@@ -153,7 +155,7 @@ def pretrain(
             checkpoints = glob(str(args.checkpoint_path / "checkpoint_*"))
             if len(checkpoints):
                 latest_checkpoint = sorted(checkpoints)[-1]
-                print("Resuming from checkpoint: ", latest_checkpoint)
+                logging.info("Resuming from checkpoint: ", latest_checkpoint)
                 checkpoint = torch.load(latest_checkpoint)
                 start_epoch = checkpoint["epochs"]
                 model.load_state_dict(checkpoint["model_state_dict"])
@@ -175,7 +177,7 @@ def pretrain(
                 pin_memory=True,
                 sampler=train_sampler,
             )
-            print(f"EPOCH {epoch}, PART {dataset_part_idx}:")
+            logging.info(f"EPOCH {epoch}, PART {dataset_part_idx}:")
 
             model.train()
             train_loss, train_accuracy = run_epoch(
@@ -187,9 +189,9 @@ def pretrain(
             )
 
             if gpu_idx == 0:
-                print("Train loss:", train_loss, "\t\tTrain accuracy:", train_accuracy)
+                logging.info(f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}")
                 if args.checkpoint_path is not None:
-                    print("Saving checkpoint...")
+                    logging.info("Saving checkpoint...")
 
                     if type(model) == torch.nn.DataParallel:
                         model_state_dict = model.module.state_dict()
@@ -222,14 +224,10 @@ def main():
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--num_gpus", type=int, default=0)
+    parser.add_argument("--port", type=int, default=12345)
     parser.add_argument("--scheduler", type=str)
     parser.add_argument("--dataset_parts", type=int, default=60)
     args = parser.parse_args()
-
-    if args.checkpoint_path is not None:
-        print("Checkpoint path:", args.checkpoint_path)
-        args.checkpoint_path.mkdir(exist_ok=True)
-        logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.DEBUG)
 
     torch.manual_seed(args.seed)
     random.seed(args.seed)

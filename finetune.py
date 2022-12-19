@@ -15,7 +15,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import random
 import numpy as np
 from dataset_loading import load_glue_sentence_classification, load_tokenized_dataset
-from distributed import distributed_setup
+from utils import distributed_cleanup, distributed_setup, setup_logging
 from model import (
     BertForSequenceClassificationWithLoss,
     load_pretrained_bert_base,
@@ -53,7 +53,7 @@ def run_epoch(
 
         loss = torch.sum(loss)
         loss.backward()
-        losses.append(loss.detach().cpu())
+        losses.append(loss)
         if optimizer is not None:
             optimizer.step()
         progress_bar.update(1)
@@ -61,6 +61,7 @@ def run_epoch(
             f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}% device:{device}",
             refresh=True,
         )
+
     loss = torch.mean(torch.stack(losses))
     return loss, correct_predictions / total_predictions
 
@@ -73,12 +74,14 @@ def finetune(
 ):
 
     if gpu_idx != -1:
-        distributed_setup(gpu_idx, args.num_gpus)
+        distributed_setup(gpu_idx, args.num_gpus, args.port)
         model = model.to(gpu_idx)
         model = DDP(model, device_ids=[gpu_idx], find_unused_parameters=True)
         device = torch.device(gpu_idx)
     else:
         device = torch.device("cpu")
+
+    setup_logging(args.checkpoint_path)
 
     def get_dataloader(dataset):
         sampler = torch.utils.data.distributed.DistributedSampler(
@@ -115,14 +118,18 @@ def finetune(
     for epoch in range(start_epoch, args.num_epochs):
         logging.info(f"EPOCH {epoch}:")
 
-        model.train()
         train_loss, train_accuracy = run_epoch(
             model, train_dataloader, optimizer=optimizer, device=device, epoch=epoch
         )
-        model.eval()
+        torch.distributed.all_reduce(train_loss, op=torch.distributed.ReduceOp.AVG)
+        torch.distributed.all_reduce(train_accuracy, op=torch.distributed.ReduceOp.AVG)
+
         test_loss, test_accuracy = run_epoch(model, eval_dataloader, device=device)
-        logging.info("Train loss:", train_loss, "\t\tTrain accuracy:", train_accuracy)
-        logging.info("Test loss:", test_loss, "\t\tTest accuracy:", test_accuracy)
+        torch.distributed.all_reduce(test_loss, op=torch.distributed.ReduceOp.AVG)
+        torch.distributed.all_reduce(test_accuracy, op=torch.distributed.ReduceOp.AVG)
+
+        logging.info(f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}")
+        logging.info(f"Test loss: {test_loss}\t\tTest accuracy: {test_accuracy}")
 
         if gpu_idx == 0 and args.checkpoint_path is not None:
             logging.info("Saving checkpoint...")
@@ -145,6 +152,8 @@ def finetune(
                 args.checkpoint_path / f"checkpoint_epoch{epoch:0>3}",
             )
 
+    distributed_cleanup()
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -156,14 +165,10 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--port", type=int, default=12345)
     parser.add_argument("--num_epochs", type=int, default=6)
     parser.add_argument("--device_ids", nargs="+", type=int, default=None)
     args = parser.parse_args()
-
-    if args.checkpoint_path is not None:
-        print("Checkpoint path:", args.checkpoint_path)
-        args.checkpoint_path.mkdir(exist_ok=True)
-        logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.DEBUG)
 
     torch.manual_seed(args.seed)
     random.seed(args.seed)

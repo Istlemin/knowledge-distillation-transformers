@@ -17,6 +17,7 @@ python3 kd_finetune.py \
     --num_epochs 10 \
     --num_gpus 4 \
     --kd_losses transformer_layer \
+    --port 12346 \
     --resume \
     > log1 2>&1
 
@@ -33,6 +34,7 @@ python3 kd_finetune.py \
     --num_epochs 5 \
     --num_gpus 4 \
     --kd_losses prediction_layer \
+    --port 12346 \
     --resume \
     > log2 2>&1
 

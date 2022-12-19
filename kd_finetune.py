@@ -54,6 +54,7 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--port", type=int, default=12345)
     parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--num_gpus", type=int, default=0)
     parser.add_argument(
@@ -64,7 +65,7 @@ def main():
     if args.checkpoint_path is not None:
         print("Checkpoint path:", args.checkpoint_path)
         args.checkpoint_path.mkdir(exist_ok=True)
-        logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.DEBUG)
+        logging.basicConfig(filename=args.checkpoint_path / "log", level=logging.INFO)
 
     torch.manual_seed(args.seed)
     random.seed(args.seed)
