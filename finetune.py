@@ -46,7 +46,7 @@ def run_epoch(
         batch = {k: v.to(device) for k, v in batch.items()}
         if optimizer is not None:
             optimizer.zero_grad()
-        loss, curr_correct_predictions = model(epoch=epoch, **batch)
+        loss, curr_correct_predictions = model(**batch)
 
         correct_predictions += curr_correct_predictions
         total_predictions += len(batch["input_ids"])
@@ -156,6 +156,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--num_epochs", type=int, default=6)
     parser.add_argument("--device_ids", nargs="+", type=int, default=None)
     args = parser.parse_args()
 

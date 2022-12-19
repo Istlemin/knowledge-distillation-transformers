@@ -21,9 +21,9 @@ python3 /jmain02/home/J2AD015/axf03/fxe31-axf03/project/knowledge-distillation-t
     --teacher_model $teacher_model_path \
     --seed $seed \
     --lr 1e-4 \
+    --scheduler linear_warmup \
     --batch_size 256 \
     --num_epochs 4 \
-    --num_gpus 8 \
-    > /jmain02/home/J2AD015/axf03/fxe31-axf03/project/knowledge-distillation-transformers/jadelog 2>&1
+    --num_gpus 8
 
 
