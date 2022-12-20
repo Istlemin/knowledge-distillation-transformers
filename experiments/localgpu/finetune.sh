@@ -11,7 +11,7 @@ base_url="/local/scratch-3/fwe21/project/"
 seed=0
 dataset_path=$base_url"GLUE-baselines/glue_data/SST-2/"
 model_path=$base_url"models/pretrained_bert.pt" 
-checkpoint_path=$base_url"checkpoints/finetune_base_lr2e-5_batch32_seed0" 
+checkpoint_path=$base_url"checkpoints/finetune_untrained_tiny_lr2e-5_batch32_seed0" 
 
 
 #CUDA_VISIBLE_DEVICES=0,1,2,3 \
@@ -22,5 +22,6 @@ python3 finetune.py \
     --seed $seed \
     --lr 2e-5 \
     --batch_size 32 \
-    --num_gpus 4
+    --num_gpus 4 \
+    > log 2>&1
 

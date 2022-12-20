@@ -77,7 +77,7 @@ class KDTransformerLayers(KDLoss):
         attention_loss = self.kd_attention(teacher_output, student_output)
         hidden_states_loss = self.kd_hidden_states(teacher_output, student_output)
         # print(attention_loss * 1000, hidden_states_loss)
-        return attention_loss * 100 + hidden_states_loss * 0.1
+        return attention_loss + hidden_states_loss
 
 
 class KD_MLM(ModelWithLoss):

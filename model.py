@@ -55,7 +55,7 @@ class BertForSequenceClassificationWithLoss(ModelWithLoss):
 
 
 def get_bert_config(config_name):
-    config: BertConfig = BertConfig.from_pretrained("bert-base-uncased", num_labels=5)
+    config: BertConfig = BertConfig.from_pretrained("bert-base-uncased", num_labels=2)
 
     if config_name == "base":
         return config
@@ -75,12 +75,12 @@ def get_bert_config(config_name):
 
 def load_pretrained_bert_base():
     return AutoModelForSequenceClassification.from_pretrained(
-        "bert-base-uncased", num_labels=5
+        "bert-base-uncased", num_labels=2
     )
 
 
 def load_untrained_bert_base():
-    config = BertConfig.from_pretrained("bert-base-uncased", num_labels=5)
+    config = BertConfig.from_pretrained("bert-base-uncased", num_labels=2)
     return AutoModelForSequenceClassification.from_config(config)
 
 

@@ -18,6 +18,7 @@ from dataset_loading import load_glue_sentence_classification, load_tokenized_da
 from utils import distributed_cleanup, distributed_setup, set_random_seed, setup_logging
 from model import (
     BertForSequenceClassificationWithLoss,
+    get_bert_config,
     load_pretrained_bert_base,
     load_model_from_disk,
     ModelWithLoss,
@@ -58,7 +59,7 @@ def run_epoch(
             optimizer.step()
         progress_bar.update(1)
         progress_bar.set_description(
-            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}% device:{device}",
+            f"Loss: {(sum(losses)/len(losses)).item():.4f}, Acc: {(correct_predictions / total_predictions*100).item():.2f}% device:{str(device)}",
             refresh=True,
         )
 
@@ -122,12 +123,16 @@ def finetune(
         train_loss, train_accuracy = run_epoch(
             model, train_dataloader, optimizer=optimizer, device=device, epoch=epoch
         )
-        torch.distributed.all_reduce(train_loss, op=torch.distributed.ReduceOp.AVG)
-        torch.distributed.all_reduce(train_accuracy, op=torch.distributed.ReduceOp.AVG)
+        torch.distributed.all_reduce(train_loss, op=torch.distributed.ReduceOp.SUM)
+        torch.distributed.all_reduce(train_accuracy, op=torch.distributed.ReduceOp.SUM)
+        train_loss /= args.num_gpus
+        train_accuracy /= args.num_gpus
 
         test_loss, test_accuracy = run_epoch(model, eval_dataloader, device=device)
-        torch.distributed.all_reduce(test_loss, op=torch.distributed.ReduceOp.AVG)
-        torch.distributed.all_reduce(test_accuracy, op=torch.distributed.ReduceOp.AVG)
+        torch.distributed.all_reduce(test_loss, op=torch.distributed.ReduceOp.SUM)
+        torch.distributed.all_reduce(test_accuracy, op=torch.distributed.ReduceOp.SUM)
+        test_loss /= args.num_gpus
+        test_accuracy /= args.num_gpus
 
         logging.info(f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}")
         logging.info(f"Test loss: {test_loss}\t\tTest accuracy: {test_accuracy}")

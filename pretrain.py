@@ -126,6 +126,11 @@ def pretrain(
     model: ModelWithLoss,
     args,
 ):
+    dataset_size = sum(
+        len(Dataset.load_from_disk(args.dataset_path / str(i)))
+        for i in range(args.dataset_parts)
+    )
+
     set_random_seed(args.seed)
     if gpu_idx != -1:
         distributed_setup(gpu_idx, args.num_gpus, args.port)
@@ -141,13 +146,14 @@ def pretrain(
         model.parameters(), lr=args.lr, betas=[0.9, 0.999], weight_decay=0.01
     )
 
-    scheduler = None
     if args.scheduler == "linear_warmup":
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
-            num_warmup_steps=10000,
-            num_training_steps=5000 * args.dataset_parts * args.num_epochs,
+            num_warmup_steps=5000,
+            num_training_steps=dataset_size * args.num_epochs // args.batch_size,
         )
+    else:
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda s: 1)
 
     start_epoch = 0
     start_part = 0
@@ -157,13 +163,15 @@ def pretrain(
             checkpoints = glob(str(args.checkpoint_path / "checkpoint_*"))
             if len(checkpoints):
                 latest_checkpoint = sorted(checkpoints)[-1]
-                logging.info("Resuming from checkpoint: ", latest_checkpoint)
+                logging.info(f"Resuming from checkpoint: {latest_checkpoint}")
                 checkpoint = torch.load(latest_checkpoint)
                 start_epoch = checkpoint["epochs"]
                 if "parts" in checkpoint:
                     start_part = checkpoint["parts"]
                 model.load_state_dict(checkpoint["model_state_dict"])
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                if "scheduler_state_dict" in checkpoint:
+                    scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
     for epoch in range(start_epoch, args.num_epochs):
         for dataset_part_idx in range(start_part, args.dataset_parts):
@@ -210,6 +218,7 @@ def pretrain(
                             "parts": dataset_part_idx + 1,
                             "model_state_dict": model_state_dict,
                             "optimizer_state_dict": optimizer.state_dict(),
+                            "scheduler_state_dict": scheduler.state_dict(),
                             "train_loss": train_loss,
                             "train_accuracy": train_accuracy,
                         },
