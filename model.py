@@ -59,13 +59,37 @@ def get_bert_config(config_name):
 
     if config_name == "base":
         return config
-    if config_name == "tiny":
+    if config_name == "small12h":
+        config.num_attention_heads = 12
+        config.intermediate_size = 2048
+        config.hidden_size = 504
+        config.num_hidden_layers = 4
+        return config
+    if config_name == "small":
+        config.num_attention_heads = 8
+        config.intermediate_size = 2048
+        config.hidden_size = 512
+        config.num_hidden_layers = 4
+        return config
+    if config_name == "TinyBERT":
         config.num_attention_heads = 12
         config.intermediate_size = 1200
         config.hidden_size = 312
         config.num_hidden_layers = 4
         return config
-    if config_name == "nano":
+    if config_name == "mini":
+        config.num_attention_heads = 4
+        config.intermediate_size = 1024
+        config.hidden_size = 256
+        config.num_hidden_layers = 4
+        return config
+    if config_name == "mini12h":
+        config.num_attention_heads = 12
+        config.intermediate_size = 1024
+        config.hidden_size = 248
+        config.num_hidden_layers = 4
+        return config
+    if config_name == "BERT_tiny":
         config.num_attention_heads = 2
         config.intermediate_size = 512
         config.hidden_size = 128

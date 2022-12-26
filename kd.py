@@ -17,12 +17,18 @@ ModelOutput = Union[MaskedLMOutput, SequenceClassifierOutput]
 Model = Union[BertForMaskedLM, BertForSequenceClassification]
 
 
+def soft_cross_entropy(predicts, targets):
+    predicts_likelihood = torch.nn.functional.log_softmax(predicts, dim=-1)
+    targets_prob = torch.nn.functional.softmax(targets, dim=-1)
+    return (-targets_prob * predicts_likelihood).mean()
+
+
 class KDPred(KDLoss):
     def __init__(self):
         super().__init__()
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
-        return F.mse_loss(teacher_output.logits, student_output.logits) / 10
+        return soft_cross_entropy(teacher_output.logits, student_output.logits)
 
 
 class KDAttention(KDLoss):
@@ -66,17 +72,19 @@ class KDTransformerLayers(KDLoss):
         super().__init__()
 
         # Evenly spread out layer map
-        layer_map = [
+        hidden_states_layer_map = [
             i * (teacher_cfg.num_hidden_layers) // (student_cfg.num_hidden_layers)
-            for i in range(student_cfg.num_hidden_layers)
+            for i in range(student_cfg.num_hidden_layers + 1)
         ]
-        self.kd_hidden_states = KDHiddenStates(layer_map, teacher_cfg, student_cfg)
-        self.kd_attention = KDAttention(layer_map)
+        attention_layer_map = hidden_states_layer_map[: student_cfg.num_hidden_layers]
+        self.kd_hidden_states = KDHiddenStates(
+            hidden_states_layer_map, teacher_cfg, student_cfg
+        )
+        self.kd_attention = KDAttention(attention_layer_map)
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         attention_loss = self.kd_attention(teacher_output, student_output)
         hidden_states_loss = self.kd_hidden_states(teacher_output, student_output)
-        # print(attention_loss * 1000, hidden_states_loss)
         return attention_loss + hidden_states_loss
 
 

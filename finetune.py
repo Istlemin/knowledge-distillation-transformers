@@ -52,7 +52,7 @@ def run_epoch(
         correct_predictions += curr_correct_predictions
         total_predictions += len(batch["input_ids"])
 
-        loss = torch.sum(loss)
+        loss = torch.mean(loss)
         loss.backward()
         losses.append(loss)
         if optimizer is not None:

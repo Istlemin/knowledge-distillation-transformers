@@ -113,7 +113,7 @@ def run_epoch(
 
         progress_bar.update(1)
         progress_bar.set_description(
-            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}, lr:{scheduler.get_last_lr()}",
+            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}, lr:{scheduler.get_last_lr()[0]:.2f}",
             refresh=True,
         )
 
@@ -165,7 +165,7 @@ def pretrain(
                 latest_checkpoint = sorted(checkpoints)[-1]
                 logging.info(f"Resuming from checkpoint: {latest_checkpoint}")
                 checkpoint = torch.load(latest_checkpoint)
-                start_epoch = checkpoint["epochs"]
+                start_epoch = checkpoint["epochs"]-1
                 if "parts" in checkpoint:
                     start_part = checkpoint["parts"]
                 model.load_state_dict(checkpoint["model_state_dict"])

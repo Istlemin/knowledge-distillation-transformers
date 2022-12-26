@@ -12,7 +12,8 @@ def tokenize(dataset) -> Dataset:
         )
 
     print("Tokenizing...")
-    tokenized_dataset = dataset.map(tokenize_function)
+    tokenized_dataset = dataset.filter(lambda sample: sample["sentence"] is not None).map(tokenize_function)
+    print("Num tokenized entries:", len(tokenized_dataset))
     tokenized_dataset = tokenized_dataset.remove_columns(["sentence"])
     tokenized_dataset["train"] = tokenized_dataset["train"].rename_column(
         "label", "labels"

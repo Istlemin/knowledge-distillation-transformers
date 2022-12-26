@@ -141,8 +141,10 @@ def prepare_dataset(document_dataset: Dataset, outdir: Path, seq_len=128):
 
 
 def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
+    shuffle_perm = list(range(len(document_dataset)))
+    random.shuffle(shuffle_perm)
     batches = [
-        document_dataset.select(range(i, i + batch_size))
+        document_dataset.select(shuffle_perm[i : i + batch_size])
         for i in tqdm.tqdm(range(0, len(document_dataset), batch_size))
     ]
 

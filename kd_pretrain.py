@@ -47,7 +47,7 @@ def main():
         dest="teacher_model_path",
         type=Path,
     )
-    parser.add_argument("--student_model_config", type=str, default="tiny")
+    parser.add_argument("--student_model_config", type=str, default="small12h")
     parser.add_argument("--checkpoint_path", type=Path)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
@@ -57,7 +57,7 @@ def main():
     parser.add_argument("--port", type=int, default=12345)
     parser.add_argument("--num_gpus", type=int, default=0)
     parser.add_argument("--scheduler", type=str)
-    parser.add_argument("--dataset_parts", type=int, default=60)
+    parser.add_argument("--dataset_parts", type=int, default=59)
     args = parser.parse_args()
 
     set_random_seed(args.seed)

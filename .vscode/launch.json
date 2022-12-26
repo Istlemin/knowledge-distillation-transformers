@@ -65,16 +65,15 @@
                 "--num_gpus",
                 "1",
                 "--teacher_model",
-                "../models/finetuned_bert_base_ss2_92.4%.pt",
-                // "--checkpoint_path",
-                // "../checkpoints/kd_finetune_notpretrained",
-                "--student_model_config",
-                "tiny",
+                "../models/bert_base_SST-2_93.58%/model.pt",
+                "--student_model_path",
+                "../models/general_small12h.pt",
                 "--num_epochs",
                 "15",
                 "--port",
-                "12348",
-                "--resume",
+                "12352",
+                
+    "--kd_losses","transfomer_layer"
             ],
             "console": "integratedTerminal",
             "justMyCode": false
