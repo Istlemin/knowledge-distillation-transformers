@@ -18,7 +18,8 @@
                 "../checkpoints/localgpu_test"
             ],
             "console": "integratedTerminal",
-            "justMyCode": false
+            "justMyCode": false,
+            "env": {"PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "10"},
         },
         {
             "name": "Pretrain",
@@ -27,12 +28,17 @@
             "program": "pretrain.py",
             "args": [
                 "--dataset",
-                "../wikipedia_mlm128/",
-                "--device_ids",
-                "0",
+                "../wikipedia_mlm128_2/",
+                "--model",
+                "../models/general_small12h_mlm.pt",
+                "--lr",
+                "1e-2",
+                "--num_gpus",
+                "2",
             ],
             "console": "integratedTerminal",
-            "justMyCode": false
+            "justMyCode": false,
+            "env": {"PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "10"},
         },
         {
             "name": "KD Pretrain",
@@ -52,7 +58,8 @@
                 "4",
             ],
             "console": "integratedTerminal",
-            "justMyCode": false
+            "justMyCode": false,
+            "env": {"PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "10"},
         },
         {
             "name": "KD Finetune",
@@ -66,17 +73,26 @@
                 "1",
                 "--teacher_model",
                 "../models/bert_base_SST-2_93.58%/model.pt",
-                "--student_model_path",
-                "../models/general_small12h.pt",
+                "--student_model_config",
+                "small12h",
                 "--num_epochs",
-                "15",
+                "10",
                 "--port",
-                "12352",
-                
-    "--kd_losses","transfomer_layer"
+                "12345",
+                "--scheduler",
+                "linear_warmup",
+                "--kd_losses",
+                "transformer_layer",
+                "--lr",
+                "5e-5",
+                "--seed",
+                "0",
+                "--batch_size",
+                "8"
             ],
             "console": "integratedTerminal",
-            "justMyCode": false
+            "justMyCode": false,
+            "env": {"PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "10"},
         }
     ]
 }

@@ -39,6 +39,7 @@ from model import (
     load_model_from_disk,
     load_untrained_bert_base,
 )
+from utils import get_optimizer, get_scheduler
 
 from tqdm.auto import tqdm
 
@@ -113,7 +114,7 @@ def run_epoch(
 
         progress_bar.update(1)
         progress_bar.set_description(
-            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}, lr:{scheduler.get_last_lr()[0]:.2f}",
+            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}, lr:{scheduler.get_last_lr()[0]:.2e}",
             refresh=True,
         )
 
@@ -142,18 +143,10 @@ def pretrain(
 
     setup_logging(args.checkpoint_path)
 
-    optimizer = Adam(
-        model.parameters(), lr=args.lr, betas=[0.9, 0.999], weight_decay=0.01
-    )
+    total_train_steps = dataset_size * args.num_epochs // args.batch_size
 
-    if args.scheduler == "linear_warmup":
-        scheduler = get_linear_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=5000,
-            num_training_steps=dataset_size * args.num_epochs // args.batch_size,
-        )
-    else:
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda s: 1)
+    optimizer = get_optimizer(model, args.lr)
+    scheduler = get_scheduler(optimizer, total_train_steps, schedule=args.scheduler)
 
     start_epoch = 0
     start_part = 0
@@ -170,8 +163,6 @@ def pretrain(
                     start_part = checkpoint["parts"]
                 model.load_state_dict(checkpoint["model_state_dict"])
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-                if "scheduler_state_dict" in checkpoint:
-                    scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
     for epoch in range(start_epoch, args.num_epochs):
         for dataset_part_idx in range(start_part, args.dataset_parts):
@@ -243,7 +234,7 @@ def main():
     parser.add_argument("--num_gpus", type=int, default=0)
     parser.add_argument("--port", type=int, default=12345)
     parser.add_argument("--scheduler", type=str)
-    parser.add_argument("--dataset_parts", type=int, default=60)
+    parser.add_argument("--dataset_parts", type=int, default=59)
     args = parser.parse_args()
 
     set_random_seed(args.seed)

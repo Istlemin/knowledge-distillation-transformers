@@ -35,6 +35,7 @@ class BertForMaskedLMWithLoss(ModelWithLoss):
         super().__init__()
 
         self.model = model
+        self.model.bert.requires_grad_(False)
 
     def forward(self, input_ids, is_masked, output_ids):
         outputs = self.model(input_ids, attention_mask=~is_masked)

@@ -28,59 +28,60 @@ class KDPred(KDLoss):
         super().__init__()
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
-        return soft_cross_entropy(teacher_output.logits, student_output.logits)
+        return soft_cross_entropy(student_output.logits, teacher_output.logits)
 
 
 class KDAttention(KDLoss):
-    def __init__(self, layer_map):
+    def __init__(self, teacher_cfg: BertConfig, student_cfg: BertConfig, layer_map="uniform",):
         super().__init__()
-        self.layer_map = layer_map
+        if layer_map=="uniform":
+            # Evenly spread out layer map, 
+            self.layer_map = [
+                (i+1) * (teacher_cfg.num_hidden_layers) // (student_cfg.num_hidden_layers) - 1
+                for i in range(student_cfg.num_hidden_layers)
+            ]
+        else:
+            raise Exception("No such layer map implemented")
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
-        teacher_attentions = torch.stack(teacher_output.attentions)
-        student_attentions = torch.stack(student_output.attentions)
-        return F.mse_loss(teacher_attentions[self.layer_map], student_attentions)
-
+        loss = 0 
+        for student_att, teacher_att_layer in zip(student_output.attentions, self.layer_map):
+            teacher_att = teacher_output.attentions[teacher_att_layer]
+            student_att = student_att * (student_att > -1e2)
+            teacher_att = teacher_att * (teacher_att > -1e2)
+            loss += F.mse_loss(student_att, teacher_att)
+        return loss
 
 class KDHiddenStates(KDLoss):
-    def __init__(self, layer_map, teacher_cfg: BertConfig, student_cfg: BertConfig):
+    def __init__(self, teacher_cfg: BertConfig, student_cfg: BertConfig, layer_map="uniform"):
         super().__init__()
-        self.layer_map = layer_map
-        self.student_to_teacher = nn.ModuleList(
-            [
-                nn.Linear(student_cfg.hidden_size, teacher_cfg.hidden_size)
-                for i in range(len(layer_map))
+
+        if layer_map=="uniform":
+            # Evenly spread out layer map
+            self.layer_map = [
+                i * (teacher_cfg.num_hidden_layers) // (student_cfg.num_hidden_layers)
+                for i in range(student_cfg.num_hidden_layers + 1)
             ]
-        )
+        else:
+            raise Exception("No such layer map implemented")
+
+        self.student_to_teacher = nn.Linear(student_cfg.hidden_size, teacher_cfg.hidden_size)
+        self.student_to_teacher.load_state_dict(torch.load("../models/general_tinybert_huggingface/fit_dense"))
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
-        teacher_hidden_states = torch.stack(teacher_output.hidden_states)
-        student_hidden_states = torch.stack(student_output.hidden_states)
-        return torch.stack(
-            [
-                F.mse_loss(
-                    self.student_to_teacher[i](student_hidden_states[i]),
-                    teacher_hidden_states[self.layer_map[i]],
-                )
-                for i in range(len(self.layer_map))
-            ]
-        ).mean()
+        loss = 0 
+        for student_hidden, teacher_hidden_layer in zip(student_output.hidden_states, self.layer_map):
+            teacher_hidden = teacher_output.hidden_states[teacher_hidden_layer]
+            loss += F.mse_loss(self.student_to_teacher(student_hidden), teacher_hidden)
+        return loss
 
 
 class KDTransformerLayers(KDLoss):
     def __init__(self, teacher_cfg: BertConfig, student_cfg: BertConfig):
         super().__init__()
 
-        # Evenly spread out layer map
-        hidden_states_layer_map = [
-            i * (teacher_cfg.num_hidden_layers) // (student_cfg.num_hidden_layers)
-            for i in range(student_cfg.num_hidden_layers + 1)
-        ]
-        attention_layer_map = hidden_states_layer_map[: student_cfg.num_hidden_layers]
-        self.kd_hidden_states = KDHiddenStates(
-            hidden_states_layer_map, teacher_cfg, student_cfg
-        )
-        self.kd_attention = KDAttention(attention_layer_map)
+        self.kd_hidden_states = KDHiddenStates(teacher_cfg, student_cfg)
+        self.kd_attention = KDAttention(teacher_cfg, student_cfg)
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         attention_loss = self.kd_attention(teacher_output, student_output)

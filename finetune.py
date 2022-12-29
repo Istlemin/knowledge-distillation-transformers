@@ -25,13 +25,14 @@ from model import (
 )
 import logging
 from tqdm.auto import tqdm
-
+from utils import get_optimizer, get_scheduler
 
 def run_epoch(
     model,
     dataloader: DataLoader,
     device: Device,
     optimizer: Optional[torch.optim.Optimizer] = None,
+    scheduler: torch.optim.lr_scheduler.LambdaLR = None,
     epoch=-1,
 ):
     if optimizer is None:
@@ -57,9 +58,12 @@ def run_epoch(
         losses.append(loss)
         if optimizer is not None:
             optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
+
         progress_bar.update(1)
         progress_bar.set_description(
-            f"Loss: {(sum(losses)/len(losses)).item():.4f}, Acc: {(correct_predictions / total_predictions*100).item():.2f}% device:{str(device)}",
+            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}, lr:{scheduler.get_last_lr()[0]:.2e}",
             refresh=True,
         )
 
@@ -90,7 +94,7 @@ def finetune(
             dataset,
             num_replicas=args.num_gpus,
             rank=gpu_idx,
-            shuffle=True,
+            shuffle=False,
         )
         return DataLoader(
             dataset,
@@ -101,7 +105,10 @@ def finetune(
     train_dataloader = get_dataloader(tokenized_datasets["train"])
     eval_dataloader = get_dataloader(tokenized_datasets["dev"])
 
-    optimizer = Adam(model.parameters(), lr=args.lr)
+    total_train_steps = len(tokenized_datasets["train"]) * args.num_epochs // args.batch_size
+
+    optimizer = get_optimizer(model, args.lr)
+    scheduler = get_scheduler(optimizer, total_train_steps, schedule=args.scheduler,warmup_proportion=0.1)
 
     start_epoch = 0
 
@@ -121,7 +128,7 @@ def finetune(
         logging.info(f"EPOCH {epoch}:")
 
         train_loss, train_accuracy = run_epoch(
-            model, train_dataloader, optimizer=optimizer, device=device, epoch=epoch
+            model, train_dataloader, optimizer=optimizer, scheduler=scheduler, device=device, epoch=epoch
         )
         torch.distributed.all_reduce(train_loss, op=torch.distributed.ReduceOp.SUM)
         torch.distributed.all_reduce(train_accuracy, op=torch.distributed.ReduceOp.SUM)
