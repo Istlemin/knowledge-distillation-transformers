@@ -57,6 +57,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--port", type=int, default=12345)
     parser.add_argument("--num_epochs", type=int, default=3)
+    parser.add_argument("--scheduler", type=str)
     parser.add_argument("--num_gpus", type=int, default=0)
     parser.add_argument(
         "--kd_losses", nargs="+", default=["transformer_layer", "prediction_layer"]
@@ -72,7 +73,7 @@ def main():
     teacher = load_model_from_disk(args.teacher_model_path)
 
     if args.student_model_path is not None:
-        student = load_model_from_disk(args.student_model_path)
+        student = AutoModelForSequenceClassification.from_pretrained(args.student_model_path)
     else:
         student = AutoModelForSequenceClassification.from_config(
             get_bert_config(args.student_model_config)
