@@ -66,8 +66,7 @@ class KDHiddenStates(KDLoss):
             raise Exception("No such layer map implemented")
 
         self.student_to_teacher = nn.Linear(student_cfg.hidden_size, teacher_cfg.hidden_size)
-        self.student_to_teacher.load_state_dict(torch.load("../models/general_tinybert_huggingface/fit_dense"))
-
+        
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         loss = 0 
         for student_hidden, teacher_hidden_layer in zip(student_output.hidden_states, self.layer_map):

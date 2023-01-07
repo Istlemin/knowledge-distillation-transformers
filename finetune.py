@@ -62,9 +62,12 @@ def run_epoch(
             scheduler.step()
 
         progress_bar.update(1)
+        progress_description = f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}"
+        if scheduler is not None:
+            progress_description += f", lr:{scheduler.get_last_lr()[0]:.2e}"
         progress_bar.set_description(
-            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}, lr:{scheduler.get_last_lr()[0]:.2e}",
-            refresh=True,
+            progress_description,
+            refresh=True
         )
 
     loss = torch.mean(torch.stack(losses))
