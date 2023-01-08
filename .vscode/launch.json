@@ -93,6 +93,21 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "env": {"PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "10"},
-        }
+        },
+        {
+            "name": "Data Augmentation",
+            "type": "python",
+            "request": "launch",
+            "program": "dataset_augmentation.py",
+            "args": [
+                "--dataset",
+                "../GLUE-baselines/glue_data/SST-2/",
+                "--glove",
+                "../TinyBERT/glove.6B.50d.txt"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {"PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "10"},
+        },
     ]
 }
