@@ -29,6 +29,7 @@ from model import (
     load_model_from_disk,
     load_untrained_bert_base,
 )
+from modeling.bert import prepare_bert_for_quantization
 
 from tqdm.auto import tqdm
 
@@ -62,6 +63,7 @@ def main():
     parser.add_argument(
         "--kd_losses", nargs="+", default=["transformer_layer", "prediction_layer"]
     )
+    parser.add_argument("--quantize", action='store_true')
     args = parser.parse_args()
 
     set_random_seed(args.seed)
@@ -78,6 +80,10 @@ def main():
         student = AutoModelForSequenceClassification.from_config(
             get_bert_config(args.student_model_config)
         )
+
+    if args.quantize:
+        print("KD finetune on quantized student")
+        student = prepare_bert_for_quantization(student)
 
     kd_losses_dict = {
         "transformer_layer": KDTransformerLayers(teacher.config, student.config),

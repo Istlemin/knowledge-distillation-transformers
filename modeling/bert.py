@@ -6,11 +6,11 @@ from typing import Optional, Tuple
 from transformers import BertConfig, BertPreTrainedModel
 from transformers.models.bert.modeling_bert import BertSelfAttention
 
-from quantization import (
+from modeling.quantization import (
     QuantizedEmbedding,
     QuantizedLinear,
-    twn_quantizer,
-    min_max_quantizer,
+    TwnQuantizer,
+    MinMaxQuantizer,
 )
 
 
@@ -74,8 +74,8 @@ class CustomBertSelfAttention(nn.Module):
         # Q,K,V are now shape [batch_size, self.num_heads, seq_len, head_size]
 
         if self.act_quanter is not None:
-            Q = self.act_quanter.apply(Q, (1, 2, 3))
-            K = self.act_quanter.apply(K, (1, 2, 3))
+            Q = self.act_quanter(Q, (1, 2, 3))
+            K = self.act_quanter(K, (1, 2, 3))
 
         attention_scores = Q @ K.permute(
             (0, 1, 3, 2)
@@ -88,10 +88,10 @@ class CustomBertSelfAttention(nn.Module):
         attention_probabilities = self.dropout(attention_probabilities)
 
         if self.act_quanter is not None:
-            attention_probabilities = self.act_quanter.apply(
+            attention_probabilities = self.act_quanter(
                 attention_probabilities, (1, 2, 3)
             )
-            V = self.act_quanter.apply(V, (1, 2, 3))
+            V = self.act_quanter(V, (1, 2, 3))
 
         result = (
             attention_probabilities @ V
@@ -116,8 +116,8 @@ def prepare_bert_for_kd(model: BertPreTrainedModel):
 
 def prepare_bert_for_quantization(
     model: BertPreTrainedModel,
-    weight_quanter=twn_quantizer(),
-    act_quanter=min_max_quantizer(8),
+    weight_quanter=TwnQuantizer(),
+    act_quanter=MinMaxQuantizer(bits=8),
 ):
     config = model.config
     model.bert.embeddings.word_embeddings = QuantizedEmbedding(
@@ -161,8 +161,8 @@ def test_quantized_bert():
     model2 = copy.deepcopy(model1)
     model2 = prepare_bert_for_quantization(
         model2,
-        weight_quanter=min_max_quantizer(32, clamp_val=100),
-        act_quanter=min_max_quantizer(32, clamp_val=100),
+        weight_quanter=MinMaxQuantizer(bits=32, clamp_val=10000),
+        act_quanter=MinMaxQuantizer(bits=32, clamp_val=10000),
     )
 
     inp = torch.randint(200, 1000, (10, 30))
