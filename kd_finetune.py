@@ -66,7 +66,7 @@ def main():
 
     set_random_seed(args.seed)
 
-    datasets = load_tokenized_glue_dataset(args.gluepath, args.dataset,augmented=True)
+    datasets = load_tokenized_glue_dataset(args.gluepath, args.dataset,augmented=False)
 
     teacher = load_model_from_disk(args.teacher_model_path)
 

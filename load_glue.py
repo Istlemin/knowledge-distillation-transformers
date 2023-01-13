@@ -80,6 +80,9 @@ class SCDatasetTokenized(torch.utils.data.Dataset):
                 )
             )
 
+    def __len__(self):
+        return len(self.input_ids)
+
     def __getitem__(self, item):
         return SCBatch(
             labels=None if self.labels is None else self.labels[item],
@@ -133,9 +136,14 @@ def load_glue(
     header="infer",
 ):
     if augmented:
-        train = SCDataset.from_df(
-            read_tsv(path / "train_aug.tsv"), "labels", "sentence1", "sentence2"
-        )
+        if sentence2_col is None:
+            train = SCDataset.from_df(
+                read_tsv(path / "train_aug.tsv"), "labels", "sentence"
+            )
+        else:
+            train = SCDataset.from_df(
+                read_tsv(path / "train_aug.tsv"), "labels", "sentence1", "sentence2"
+            )
     else:
         train = SCDataset.from_df(
             read_tsv(path / train_file, header=header),
@@ -243,8 +251,7 @@ def load_sst2(path, augmented=False):
         labels_col="label",
         sentence1_col="sentence",
         sentence2_col=None,
-        labels=[0,1],
-        header=None
+        labels=[0,1]
     )
 
 

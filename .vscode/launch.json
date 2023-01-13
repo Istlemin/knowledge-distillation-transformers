@@ -86,7 +86,7 @@
                 "--seed",
                 "0",
                 "--batch_size",
-                "24",
+                "32",
                 "--resume",
                 "--num_gpus",
                 "1"

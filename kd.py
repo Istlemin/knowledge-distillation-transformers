@@ -65,13 +65,19 @@ class KDHiddenStates(KDLoss):
         else:
             raise Exception("No such layer map implemented")
 
-        self.student_to_teacher = nn.Linear(student_cfg.hidden_size, teacher_cfg.hidden_size)
+        if student_cfg.hidden_size == teacher_cfg.hidden_size:
+            self.student_to_teacher = None
+        else:
+            self.student_to_teacher = nn.Linear(student_cfg.hidden_size, teacher_cfg.hidden_size)
         
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         loss = 0 
         for student_hidden, teacher_hidden_layer in zip(student_output.hidden_states, self.layer_map):
             teacher_hidden = teacher_output.hidden_states[teacher_hidden_layer]
-            loss += F.mse_loss(self.student_to_teacher(student_hidden), teacher_hidden)
+            if self.student_to_teacher is None:
+                loss += F.mse_loss(student_hidden, teacher_hidden)
+            else:
+                loss += F.mse_loss(self.student_to_teacher(student_hidden), teacher_hidden)
         return loss
 
 
@@ -141,9 +147,13 @@ class KD_SequenceClassification(ModelWithLoss):
         self.student = student
 
     def forward(self, epoch=-1, **batch):
+        from utils import set_random_seed
+        set_random_seed(0)
+        self.teacher.eval()
         teacher_output = self.teacher(
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )
+        set_random_seed(0)
         student_output = self.student(
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )
