@@ -17,7 +17,7 @@ import random
 import numpy as np
 from transformers import AutoModelForMaskedLM, BertForMaskedLM
 
-from dataset_loading import (
+from load_glue import (
     load_glue_sentence_classification,
     load_tokenized_dataset,
     load_batched_dataset,

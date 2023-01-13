@@ -14,7 +14,7 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 import random
 import numpy as np
-from dataset_loading import load_glue_sentence_classification, load_tokenized_dataset
+from load_glue import load_tokenized_glue_dataset
 from utils import distributed_cleanup, distributed_setup, set_random_seed, setup_logging
 from model import (
     BertForSequenceClassificationWithLoss,
@@ -45,17 +45,28 @@ def run_epoch(
     correct_predictions = 0
     total_predictions = 0
     for batch in dataloader:
-        batch = {k: v.to(device) for k, v in batch.items()}
+        input_ids = batch.input_ids.to(device)
+        token_type_ids = batch.token_type_ids.to(device)
+        attention_mask = batch.attention_mask.to(device)
+        labels = None if batch.labels is None else batch.labels.to(device)
+
+        print(input_ids)
+
         if optimizer is not None:
             optimizer.zero_grad()
-        loss, curr_correct_predictions = model(**batch)
-
+        loss, curr_correct_predictions = model(
+            input_ids=input_ids,
+            token_type_ids=token_type_ids,
+            attention_mask=attention_mask,
+            labels=labels,
+        )
+        exit()
         correct_predictions += curr_correct_predictions
-        total_predictions += len(batch["input_ids"])
+        total_predictions += len(batch.input_ids)
 
         loss = torch.mean(loss)
         loss.backward()
-        losses.append(loss)
+        losses.append(loss.detach())
         if optimizer is not None:
             optimizer.step()
         if scheduler is not None:
@@ -105,10 +116,10 @@ def finetune(
             batch_size=args.batch_size // args.num_gpus,
         )
 
-    train_dataloader = get_dataloader(tokenized_datasets["train"])
-    eval_dataloader = get_dataloader(tokenized_datasets["dev"])
+    train_dataloader = get_dataloader(tokenized_datasets.train)
+    eval_dataloader = get_dataloader(tokenized_datasets.dev)
 
-    total_train_steps = len(tokenized_datasets["train"]) * args.num_epochs // args.batch_size
+    total_train_steps = len(tokenized_datasets.train) * args.num_epochs // args.batch_size
 
     optimizer = get_optimizer(model, args.lr)
     scheduler = get_scheduler(optimizer, total_train_steps, schedule=args.scheduler,warmup_proportion=0.1)
@@ -126,6 +137,9 @@ def finetune(
                 start_epoch = checkpoint["epochs"]
                 model.load_state_dict(checkpoint["model_state_dict"])
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+                del checkpoint
+                torch.cuda.empty_cache()
 
     for epoch in range(start_epoch, args.num_epochs):
         logging.info(f"EPOCH {epoch}:")

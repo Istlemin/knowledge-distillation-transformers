@@ -11,7 +11,7 @@ import torch.multiprocessing as mp
     
 
 from utils import set_random_seed
-from dataset_loading import load_tsv
+from load_glue import LOAD_FUNCTIONS
 
 
 class GloveEmbeddings:
@@ -168,23 +168,39 @@ def run_data_augmentation_batch(
     device,
 ):
     mlm_model.to(device)
-    augmented_data = []
-    print("Augmenting dataset...")
-    for i in tqdm(range(len(dataset["sentence"]))):
-        augmented_sentences = augment_sentence(
-            dataset["sentence"][i], tokenizer, glove_embeddings, mlm_model, device
-        )
-        for augmented_sentence in augmented_sentences:
-            augmented_data.append((augmented_sentence, dataset["label"][i]))
+    labels = []
+    sentence = []
+    sentence2 = []
 
-    augmented_dataset = pd.DataFrame(augmented_data, columns=["sentence", "label"])
-    return augmented_dataset
+    print("Augmenting dataset...")
+    for i in tqdm(range(len(dataset.sentence))):
+        augmented_sentences = augment_sentence(
+            dataset.sentence[i], tokenizer, glove_embeddings, mlm_model, device
+        )
+        for augmented in augmented_sentences:
+            sentence.append(augmented)
+            labels.append(dataset.labels[i])
+
+        if dataset.sentence2 is not None:
+            augmented_sentences2 = augment_sentence(
+                dataset.sentence2[i], tokenizer, glove_embeddings, mlm_model, device
+            )
+            for augmented in augmented_sentences2:
+                sentence2.append(augmented)
+
+    data_dict = {
+        "labels":labels,
+        "sentence": sentence,
+    }
+    if dataset.sentence2 is not None:
+        data_dict["sentenec2"] = sentence2
+    
+    return pd.DataFrame(data_dict)
 
 
 def run_data_augmentation(
-    dataset_path, glove_path, model_name="bert-base-uncased", num_processes=12,num_gpus=4
+    dataset, glove_path, model_name="bert-base-uncased", num_processes=4,num_gpus=4
 ):
-    dataset = load_tsv(dataset_path / "train.tsv")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     mlm_model = AutoModelForMaskedLM.from_pretrained(model_name)
     glove_embeddings = GloveEmbeddings(glove_path)
@@ -196,23 +212,29 @@ def run_data_augmentation(
         for i in range(0, num_processes)
     ]
 
-    with mp.Pool(10) as p:
+    with mp.Pool(num_processes) as p:
         augmented_dataset = p.starmap(run_data_augmentation_batch, (batch_args))
 
     augmented_dataset = pd.concat(augmented_dataset)
-    augmented_dataset.to_csv(dataset_path / "train_aug.tsv", sep="\t")
+    return augmented_dataset
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=Path, required=True)
+    parser.add_argument("--gluepath", type=Path, required=True)
+    parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--glove", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--num_processes", type=int, default=4)
+    parser.add_argument("--num_gpus", type=int, default=1)
     args = parser.parse_args()
 
     set_random_seed(args.seed)
+    
+    dataset = LOAD_FUNCTIONS[args.dataset](args.gluepath / args.dataset).train
+    augmented_dataset = run_data_augmentation(dataset, args.glove, num_gpus=args.num_gpus, num_processes=args.num_processes)
 
-    run_data_augmentation(args.dataset, args.glove)
+    augmented_dataset.to_csv(args.gluepath / args.dataset / "train_aug.tsv", sep="\t")
 
 
 if __name__ == "__main__":

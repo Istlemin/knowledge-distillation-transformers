@@ -2,7 +2,7 @@ import glob
 import torch
 
 from model import load_untrained_bert_base
-from dataset_loading import load_tokenized_dataset, load_glue_sentence_classification
+from load_glue import load_tokenized_dataset, load_glue_sentence_classification
 from finetune import run_epoch
 from pathlib import Path
 

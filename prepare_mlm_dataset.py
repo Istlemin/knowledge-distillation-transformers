@@ -12,7 +12,7 @@ import glob
 from pathlib import Path
 from datasets import concatenate_datasets
 from transformers import AutoTokenizer
-from dataset_loading import load_batched_dataset
+from load_glue import load_batched_dataset
 import argparse
 
 

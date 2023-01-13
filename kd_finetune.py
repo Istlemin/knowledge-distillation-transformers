@@ -17,10 +17,8 @@ import random
 import numpy as np
 from transformers import AutoModelForSequenceClassification, BertForMaskedLM
 
-from dataset_loading import (
-    load_glue_sentence_classification,
-    load_tokenized_dataset,
-    load_batched_dataset,
+from load_glue import (
+    load_tokenized_glue_dataset,
 )
 from finetune import finetune
 from model import (
@@ -36,14 +34,14 @@ from tqdm.auto import tqdm
 from typing import NamedTuple
 
 from kd import KD_MLM, KDPred, KDTransformerLayers, KD_SequenceClassification
-from pretrain import pretrain
 from utils import set_random_seed
 
 
 def main():
     print("KD Training")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", dest="dataset_path", type=Path, required=True)
+    parser.add_argument("--gluepath", type=Path, required=True)
+    parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument(
         "--teacher_model",
         dest="teacher_model_path",
@@ -68,9 +66,7 @@ def main():
 
     set_random_seed(args.seed)
 
-    datasets = load_tokenized_dataset(
-        args.dataset_path, load_glue_sentence_classification
-    )
+    datasets = load_tokenized_glue_dataset(args.gluepath, args.dataset,augmented=True)
 
     teacher = load_model_from_disk(args.teacher_model_path)
 
