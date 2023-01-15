@@ -57,4 +57,12 @@ def get_scheduler(optimizer,total_steps, schedule="linear_warmup", warmup_propor
             num_training_steps=total_steps,
         )
     
+    if schedule == "linear":
+        return get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=0,
+            num_training_steps=total_steps,
+        )
+    
+    
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lambda s: 1)

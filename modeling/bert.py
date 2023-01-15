@@ -74,24 +74,23 @@ class CustomBertSelfAttention(nn.Module):
         # Q,K,V are now shape [batch_size, self.num_heads, seq_len, head_size]
 
         if self.act_quanter is not None:
-            Q = self.act_quanter(Q, (1, 2, 3))
-            K = self.act_quanter(K, (1, 2, 3))
+            Q = self.act_quanter(Q, None)#(1, 2, 3))
+            K = self.act_quanter(K, None)#(1, 2, 3))
 
         attention_scores = Q @ K.permute(
             (0, 1, 3, 2)
         )  # Shape is [batch_size, num_heads, seq_len, seq_len]
+        attention_scores /= math.sqrt(self.head_size)
         if attention_mask is not None:
             attention_scores += attention_mask
-        attention_probabilities = nn.functional.softmax(
-            1 / math.sqrt(self.head_size) * attention_scores, dim=-1
-        )
+        attention_probabilities = nn.functional.softmax(attention_scores, dim=-1)
         attention_probabilities = self.dropout(attention_probabilities)
 
         if self.act_quanter is not None:
             attention_probabilities = self.act_quanter(
-                attention_probabilities, (1, 2, 3)
+                attention_probabilities, None#(1, 2, 3)
             )
-            V = self.act_quanter(V, (1, 2, 3))
+            V = self.act_quanter(V, None)#(1, 2, 3))
 
         result = (
             attention_probabilities @ V
@@ -116,8 +115,8 @@ def prepare_bert_for_kd(model: BertPreTrainedModel):
 
 def prepare_bert_for_quantization(
     model: BertPreTrainedModel,
-    weight_quanter=TwnQuantizer(),
-    act_quanter=MinMaxQuantizer(bits=8),
+    weight_quanter=TwnQuantizer(clamp_val=2.5),
+    act_quanter=MinMaxQuantizer(bits=8, clamp_val=2.5),
 ):
     config = model.config
     model.bert.embeddings.word_embeddings = QuantizedEmbedding(

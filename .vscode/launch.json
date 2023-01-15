@@ -81,6 +81,7 @@
                 "linear_warmup",
                 "--kd_losses",
                 "prediction_layer",
+                "transformer_layer",
                 "--lr",
                 "2e-5",
                 "--seed",

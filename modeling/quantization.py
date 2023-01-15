@@ -66,7 +66,7 @@ class MinMaxQuantizerFunction(torch.autograd.Function):
             mn = mn.unsqueeze(d)
             mx = mx.unsqueeze(d)
 
-        round_factor = (2**bits-1)/(mx-mn)
+        round_factor = (2**bits-1)/(mx-mn + 1e-8)
         quant_w = torch.round((w-mn)*round_factor)/round_factor+mn
 
         return quant_w
@@ -105,7 +105,7 @@ class QuantizedLinear(nn.Module):
         self.weight_quanter = weight_quanter
         self.act_quanter = act_quanter
 
-    def forward(self, input, input_quantize_dim=(-2,-1)):
+    def forward(self, input, input_quantize_dim=(-3,-2,-1)):
         if self.act_quanter is not None:
             input = self.act_quanter(input,input_quantize_dim)
         quant_weight = self.weight_quanter(self.weight)

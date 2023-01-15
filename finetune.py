@@ -50,8 +50,6 @@ def run_epoch(
         attention_mask = batch.attention_mask.to(device)
         labels = None if batch.labels is None else batch.labels.to(device)
 
-        print(input_ids)
-
         if optimizer is not None:
             optimizer.zero_grad()
         loss, curr_correct_predictions = model(
@@ -60,7 +58,6 @@ def run_epoch(
             attention_mask=attention_mask,
             labels=labels,
         )
-        exit()
         correct_predictions += curr_correct_predictions
         total_predictions += len(batch.input_ids)
 
@@ -108,7 +105,7 @@ def finetune(
             dataset,
             num_replicas=args.num_gpus,
             rank=gpu_idx,
-            shuffle=False,
+            shuffle=True,
         )
         return DataLoader(
             dataset,
