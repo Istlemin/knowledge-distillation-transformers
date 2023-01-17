@@ -7,7 +7,7 @@ import random
 import numpy 
 import torch
 
-from transformers.optimization import get_linear_schedule_with_warmup
+from transformers.optimization import get_linear_schedule_with_warmup, AdamW
 
 def distributed_setup(rank, world_size, port):
     os.environ["MASTER_ADDR"] = "localhost"
@@ -45,7 +45,7 @@ def get_optimizer(model, lr):
         {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
     ]
-    return torch.optim.AdamW(
+    return AdamW(
         optimizer_grouped_parameters,
         lr=lr,
         correct_bias=False)

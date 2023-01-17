@@ -12,14 +12,14 @@ seed=0
 gluepath=$base_url"GLUE-baselines/glue_data/"
 dataset="SST-2"
 model_path=$base_url"models/pretrained_bert_small.pt" 
-checkpoint_path=$base_url"checkpoints/finetune_bert_small/lr1e-5_batch32_seed0" 
+outputdir=$base_url"checkpoints/finetune_bert_small/lr1e-5_batch32_seed0" 
 
 
 CUDA_VISIBLE_DEVICES=0,1 \
 python3 finetune.py \
     --gluepath $gluepath \
     --dataset $dataset \
-    --checkpoint_path $checkpoint_path \
+    --outputdir $outputdir \
     --model $model_path \
     --seed $seed \
     --lr 1e-5 \

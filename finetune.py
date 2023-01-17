@@ -1,4 +1,5 @@
 from glob import glob
+import json
 from pathlib import Path
 from tokenize import Token
 from typing import Optional
@@ -26,6 +27,10 @@ from model import (
 import logging
 from tqdm.auto import tqdm
 from utils import get_optimizer, get_scheduler
+from args import FinetuneArgs
+
+class Args(FinetuneArgs):
+    modelpath:Path
 
 def run_epoch(
     model,
@@ -77,7 +82,7 @@ def run_epoch(
             progress_description,
             refresh=True
         )
-
+        break
     loss = torch.mean(torch.stack(losses))
     return loss, correct_predictions / total_predictions
 
@@ -86,7 +91,7 @@ def finetune(
     gpu_idx: int,
     model: ModelWithLoss,
     tokenized_datasets: DatasetDict,
-    args,
+    args : Args,
 ):
 
     set_random_seed(args.seed)
@@ -98,7 +103,8 @@ def finetune(
     else:
         device = torch.device("cpu")
 
-    setup_logging(args.checkpoint_path)
+    setup_logging(args.outputdir)
+    logging.info(args.get_reproducibility_info())
 
     def get_dataloader(dataset):
         sampler = torch.utils.data.distributed.DistributedSampler(
@@ -114,31 +120,16 @@ def finetune(
         )
 
     train_dataloader = get_dataloader(tokenized_datasets.train)
-    eval_dataloader = get_dataloader(tokenized_datasets.dev)
+    dev_dataloader = get_dataloader(tokenized_datasets.dev)
 
     total_train_steps = len(tokenized_datasets.train) * args.num_epochs // args.batch_size
 
     optimizer = get_optimizer(model, args.lr)
     scheduler = get_scheduler(optimizer, total_train_steps, schedule=args.scheduler,warmup_proportion=0.1)
 
-    start_epoch = 0
+    args.outputdir.mkdir(parents=True, exist_ok=True)
 
-    if args.checkpoint_path is not None:
-        args.checkpoint_path.mkdir(parents=True, exist_ok=True)
-        if args.resume:
-            checkpoints = glob(str(args.checkpoint_path / "checkpoint_*"))
-            if len(checkpoints):
-                latest_checkpoint = sorted(checkpoints)[-1]
-                print("Resuming from checkpoint: ", latest_checkpoint)
-                checkpoint = torch.load(latest_checkpoint)
-                start_epoch = checkpoint["epochs"]
-                model.load_state_dict(checkpoint["model_state_dict"])
-                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-
-                del checkpoint
-                torch.cuda.empty_cache()
-
-    for epoch in range(start_epoch, args.num_epochs):
+    for epoch in range(0, args.num_epochs):
         logging.info(f"EPOCH {epoch}:")
 
         train_loss, train_accuracy = run_epoch(
@@ -149,65 +140,52 @@ def finetune(
         train_loss /= args.num_gpus
         train_accuracy /= args.num_gpus
 
-        test_loss, test_accuracy = run_epoch(model, eval_dataloader, device=device)
-        torch.distributed.all_reduce(test_loss, op=torch.distributed.ReduceOp.SUM)
-        torch.distributed.all_reduce(test_accuracy, op=torch.distributed.ReduceOp.SUM)
-        test_loss /= args.num_gpus
-        test_accuracy /= args.num_gpus
+        dev_loss, dev_accuracy = run_epoch(model, dev_dataloader, device=device)
+        torch.distributed.all_reduce(dev_loss, op=torch.distributed.ReduceOp.SUM)
+        torch.distributed.all_reduce(dev_accuracy, op=torch.distributed.ReduceOp.SUM)
+        dev_loss /= args.num_gpus
+        dev_accuracy /= args.num_gpus
 
         logging.info(f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}")
-        logging.info(f"Test loss: {test_loss}\t\tTest accuracy: {test_accuracy}")
+        logging.info(f"Dev loss: {dev_loss}\t\tdev accuracy: {dev_accuracy}")
 
-        if gpu_idx == 0 and args.checkpoint_path is not None:
-            logging.info("Saving checkpoint...")
+        if gpu_idx == 0:
+            checkpoint = {
+                "epochs": epoch + 1,
+                "train_loss": train_loss.item(),
+                "dev_loss": dev_loss.item(),
+                "train_accuracy": train_accuracy.item(),
+                "dev_accuracy": dev_accuracy.item(),
+                "lr": args.lr,
+                "batch_size": args.batch_size,
+                "seed": args.seed
+            }
+            logging.info(json.dumps(checkpoint,indent=4))
 
-            if type(model) == torch.nn.DataParallel:
-                model_state_dict = model.module.state_dict()
-            else:
-                model_state_dict = model.state_dict()
-
-            torch.save(
-                {
-                    "epochs": epoch + 1,
-                    "model_state_dict": model_state_dict,
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "train_loss": train_loss,
-                    "test_loss": test_loss,
-                    "train_accuracy": train_accuracy,
-                    "test_accuracy": test_accuracy,
-                },
-                args.checkpoint_path / f"checkpoint_epoch{epoch:0>3}",
-            )
+            best_accuracy = 0
+            if (args.outputdir/"best.json").exists():
+                best_checkpoint = json.loads((args.outputdir/"best.json").read_text())
+                best_accuracy = best_checkpoint["dev_accuracy"]
+            
+            if dev_accuracy>best_accuracy:
+                logging.info("Saving model...")
+                (args.outputdir/"best.json").write_text(json.dumps(checkpoint))
+                torch.save(model,args.outputdir/"bestmodel")
 
     distributed_cleanup()
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--gluepath", type=Path, required=True)
-    parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--model", dest="model_path", type=Path)
-    parser.add_argument("--checkpoint_path", type=Path)
-    parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--lr", type=float, default=1e-5)
-    parser.add_argument("--scheduler", type=str)
-    parser.add_argument("--num_gpus", type=int, default=1)
-    parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--port", type=int, default=12345)
-    parser.add_argument("--num_epochs", type=int, default=6)
-    parser.add_argument("--device_ids", nargs="+", type=int, default=None)
-    parser.add_argument("--train_aug", action="store_true")
-    args = parser.parse_args()
+    args = Args().parse_args()
 
     set_random_seed(args.seed)
 
-    datasets = load_tokenized_glue_dataset(args.gluepath, args.dataset,augmented=args.train_aug)
+    datasets = load_tokenized_glue_dataset(args.gluepath, args.dataset,augmented=args.use_augmented_data)
 
-    if args.model_path is None:
+    if args.modelpath is None:
         model = load_pretrained_bert_base()
     else:
-        model = load_model_from_disk(args.model_path)
+        model = load_model_from_disk(args.modelpath)
 
     torch.multiprocessing.spawn(
         finetune,
