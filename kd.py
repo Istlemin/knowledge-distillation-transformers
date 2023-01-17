@@ -147,13 +147,10 @@ class KD_SequenceClassification(ModelWithLoss):
         self.student = student
 
     def forward(self, epoch=-1, **batch):
-        # from utils import set_random_seed
-        # set_random_seed(0)
         self.teacher.eval()
         teacher_output = self.teacher(
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )
-        #set_random_seed(0)
         student_output = self.student(
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )

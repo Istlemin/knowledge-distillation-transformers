@@ -47,7 +47,8 @@ def get_optimizer(model, lr):
     ]
     return torch.optim.AdamW(
         optimizer_grouped_parameters,
-        lr=lr)
+        lr=lr,
+        correct_bias=False)
 
 def get_scheduler(optimizer,total_steps, schedule="linear_warmup", warmup_proportion=0.1):
     if schedule == "linear_warmup":

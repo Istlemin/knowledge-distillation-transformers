@@ -70,16 +70,17 @@ def get_mlm_model_candidates(
         masked_indices.append(masked_index)
 
     inputs = torch.tensor(inputs)
-    inputs = inputs.to(device)
-
     output_logits = torch.zeros(
         (inputs.shape[0], inputs.shape[1], tokenizer.vocab_size)
     )
 
     for i in range(0, len(inputs), batch_size):
-        output_logits[i : i + batch_size] = mlm_model(
-            inputs[i : i + batch_size]
-        ).logits  # shape is [sentences, tokens, vocab_size]
+        with torch.no_grad():
+            output_logits[i : i + batch_size] = mlm_model(
+                inputs[i : i + batch_size].to(device)
+            ).logits.detach().cpu()  # shape is [sentences, tokens, vocab_size]
+
+            torch.cuda.empty_cache()
 
     masked_predictions = output_logits[torch.arange(len(output_logits)), masked_indices]
     masked_topk = torch.topk(masked_predictions, num_candidates, dim=1).indices

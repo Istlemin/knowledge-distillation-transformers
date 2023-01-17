@@ -6,6 +6,7 @@ import glob
 from datasets.dataset_dict import DatasetDict
 from datasets.arrow_dataset import Dataset
 from datasets import concatenate_datasets
+from requests import head
 from transformers import AutoTokenizer
 
 import pickle
@@ -119,7 +120,7 @@ class SCDatasetsTokenized:
 
 def read_tsv(path, header="infer"):
     return pd.read_csv(
-        path, sep="\t", header=header, on_bad_lines="warn", keep_default_na=False
+        path, sep="\t", header=header, on_bad_lines="warn", keep_default_na=False, quotechar='', quoting=3
     )
 
 
@@ -134,7 +135,14 @@ def load_glue(
     dev_file="dev.tsv",
     test_file="test.tsv",
     header="infer",
+    test_header=None,
+    test_sentence1_col=None,
+    test_sentence2_col=None,
 ):
+    test_header = header if test_header is None else test_header
+    test_sentence1_col = sentence1_col if test_sentence1_col is None else test_sentence1_col
+    test_sentence2_col = sentence2_col if test_sentence2_col is None else test_sentence2_col
+
     if augmented:
         if sentence2_col is None:
             train = SCDataset.from_df(
@@ -159,7 +167,7 @@ def load_glue(
         sentence2_col,
     )
     test = SCDataset.from_df(
-        read_tsv(path / test_file, header=header), None, sentence1_col, sentence2_col
+        read_tsv(path / test_file, header=test_header), None, test_sentence1_col, test_sentence2_col
     )
     return SCDatasets(train, dev, test, labels)
 
@@ -240,7 +248,10 @@ def load_cola(path, augmented=False):
         sentence1_col=3,
         sentence2_col=None,
         labels=[0,1],
-        header=None
+        header=None,
+        test_header="infer",
+        test_sentence1_col="sentence",
+        test_sentence2_col=None,
     )
 
 
@@ -255,7 +266,16 @@ def load_sst2(path, augmented=False):
     )
 
 
-LOAD_FUNCTIONS = {"CoLA": load_cola, "SST-2": load_sst2, "MNLI": load_mnli, "MRPC":load_mrpc}
+LOAD_FUNCTIONS = {
+    "CoLA": load_cola,
+    "SST-2": load_sst2,
+    "MNLI": load_mnli,
+    "MRPC":load_mrpc,
+    "QNLI":load_qnli,
+    "QQP":load_qqp,
+    "RTE":load_rte,
+    "WNLI":load_wnli
+}
 
 
 def load_glue_dataset(glue_path, dataset_name, augmented=False):

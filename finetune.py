@@ -184,24 +184,25 @@ def finetune(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", dest="dataset_path", type=Path, required=True)
+    parser.add_argument("--gluepath", type=Path, required=True)
+    parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--model", dest="model_path", type=Path)
     parser.add_argument("--checkpoint_path", type=Path)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--scheduler", type=str)
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--port", type=int, default=12345)
     parser.add_argument("--num_epochs", type=int, default=6)
     parser.add_argument("--device_ids", nargs="+", type=int, default=None)
+    parser.add_argument("--train_aug", action="store_true")
     args = parser.parse_args()
 
     set_random_seed(args.seed)
 
-    datasets = load_tokenized_dataset(
-        args.dataset_path, load_glue_sentence_classification
-    )
+    datasets = load_tokenized_glue_dataset(args.gluepath, args.dataset,augmented=args.train_aug)
 
     if args.model_path is None:
         model = load_pretrained_bert_base()

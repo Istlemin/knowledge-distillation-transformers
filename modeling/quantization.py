@@ -14,12 +14,12 @@ class TwnQuantizerFunction(torch.autograd.Function):
 
         w = torch.clamp(w,-clamp_val,clamp_val)
 
-        thres = 0.7 * torch.norm(w, p=1, dim=dim) / n
+        thres = torch.norm(w, p=1, dim=dim) / n * 0.7
         for d in dim:
             thres = thres.unsqueeze(d)
 
         b = (w>thres).type(w.dtype) - (w<-thres).type(w.dtype)
-        alpha = torch.norm(b*w,p=1,dim=dim)/torch.norm(b,p=1,dim=dim)
+        alpha = torch.sum(torch.abs(b*w),dim=dim)/torch.sum(torch.abs(b),dim=dim)
         for d in dim:
             alpha = alpha.unsqueeze(d)
 
@@ -66,8 +66,9 @@ class MinMaxQuantizerFunction(torch.autograd.Function):
             mn = mn.unsqueeze(d)
             mx = mx.unsqueeze(d)
 
-        round_factor = (2**bits-1)/(mx-mn + 1e-8)
-        quant_w = torch.round((w-mn)*round_factor)/round_factor+mn
+        alpha = (mx-mn + 1e-8)
+        size = (2**bits-1)
+        quant_w = torch.round((w-mn)/alpha*size)/size*alpha+mn
 
         return quant_w
 
@@ -105,7 +106,7 @@ class QuantizedLinear(nn.Module):
         self.weight_quanter = weight_quanter
         self.act_quanter = act_quanter
 
-    def forward(self, input, input_quantize_dim=(-3,-2,-1)):
+    def forward(self, input, input_quantize_dim=None):
         if self.act_quanter is not None:
             input = self.act_quanter(input,input_quantize_dim)
         quant_weight = self.weight_quanter(self.weight)
@@ -121,3 +122,22 @@ class QuantizedEmbedding(nn.Module):
     def forward(self, input):
         quant_weight = self.quanter(self.weight,-1)
         return nn.functional.embedding(input,quant_weight,padding_idx=self.padding_idx)
+
+
+
+if __name__=="__main__":
+    layer = QuantizedLinear(nn.Linear(64,64),weight_quanter=TwnQuantizer(),act_quanter=MinMaxQuantizer())
+    torch.manual_seed(0)
+    layer.weight = torch.nn.Parameter(torch.rand((64,64)))
+    layer.bias = torch.nn.Parameter(torch.rand((64,)))
+    inp = torch.rand((100,64))*10-5
+    res = layer(inp)
+    res = res**2
+    res = res*10
+    res = res+10
+    res = res/res.sum()
+    res = torch.exp(res)
+    loss = res.sum() 
+    print(loss.view(torch.int).sum())
+    loss.backward()
+    print(layer.weight.grad.view(torch.int).sum())

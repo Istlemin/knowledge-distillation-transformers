@@ -62,11 +62,12 @@ def main():
         "--kd_losses", nargs="+", default=["transformer_layer", "prediction_layer"]
     )
     parser.add_argument("--quantize", action='store_true')
+    parser.add_argument("--train_aug", action='store_true')
     args = parser.parse_args()
 
     set_random_seed(args.seed)
 
-    datasets = load_tokenized_glue_dataset(args.gluepath, args.dataset,augmented=True)
+    datasets = load_tokenized_glue_dataset(args.gluepath, args.dataset,augmented=args.train_aug)
 
     teacher = load_model_from_disk(args.teacher_model_path)
 

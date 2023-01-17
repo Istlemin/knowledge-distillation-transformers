@@ -143,6 +143,9 @@ def prepare_bert_for_quantization(
         layer.output.dense = QuantizedLinear(
             layer.output.dense, weight_quanter=weight_quanter, act_quanter=act_quanter
         )
+    model.bert.pooler.dense = QuantizedLinear(
+        model.bert.pooler.dense, weight_quanter=weight_quanter, act_quanter=act_quanter
+    )
 
     return model
 
