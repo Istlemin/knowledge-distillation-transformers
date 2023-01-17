@@ -82,7 +82,7 @@ def run_epoch(
             progress_description,
             refresh=True
         )
-        break
+        
     loss = torch.mean(torch.stack(losses))
     return loss, correct_predictions / total_predictions
 

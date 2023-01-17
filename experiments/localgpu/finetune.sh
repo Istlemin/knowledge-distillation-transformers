@@ -14,18 +14,14 @@ dataset="SST-2"
 model_path=$base_url"models/pretrained_bert_small.pt" 
 outputdir=$base_url"checkpoints/finetune_bert_small/lr1e-5_batch32_seed0" 
 
-
-CUDA_VISIBLE_DEVICES=0,1 \
-python3 finetune.py \
-    --gluepath $gluepath \
+args="--gluepath $gluepath \
     --dataset $dataset \
     --outputdir $outputdir \
     --model $model_path \
     --seed $seed \
-    --lr 1e-5 \
-    --batch_size 32 \
     --num_gpus 1 \
-    --num_epochs 10 \
-    --port 12352 \
-    > log 2>&1
+    --num_epochs 5 \
+    --port 12352"
 
+CUDA_VISIBLE_DEVICES=0,1 python3 finetune.py $args --lr 1e-5 --batch_size 32
+CUDA_VISIBLE_DEVICES=0,1 python3 finetune.py $args --lr 2e-5 --batch_size 32
