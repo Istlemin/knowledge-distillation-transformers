@@ -7,6 +7,9 @@ import torch.nn.functional as F
 from model import ModelWithLoss, masked_lm_loss
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
 from transformers import BertForMaskedLM, BertForSequenceClassification, BertConfig
+from modeling.bert import prepare_bert_for_kd
+
+from utils import set_random_seed
 
 
 class KDLoss(nn.Module):
@@ -142,18 +145,26 @@ class KD_SequenceClassification(ModelWithLoss):
 
         self.kd_losses = nn.ModuleDict(kd_losses_dict)
         self.active_kd_losses = active_kd_losses
-        self.teacher = teacher
+        self.teacher = teacher 
         self.teacher.requires_grad_(False)
         self.student = student
 
     def forward(self, epoch=-1, **batch):
         self.teacher.eval()
+        set_random_seed(0)
         teacher_output = self.teacher(
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )
+        set_random_seed(0)
         student_output = self.student(
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )
+        
+        # student_logits, student_atts, student_reps = self.student(input_ids=batch["input_ids"], 
+        #         token_type_ids=batch["token_type_ids"],
+        #         attention_mask=batch["attention_mask"])
+
+        #student_output = SequenceClassifierOutput(logits=student_logits,hidden_states=student_reps,attentions=student_atts) 
 
         predictions = torch.argmax(student_output.logits, dim=1)
         correct_predictions = torch.sum(predictions == batch["labels"])

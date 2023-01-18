@@ -23,14 +23,17 @@ from model import (
     load_pretrained_bert_base,
     load_model_from_disk,
     ModelWithLoss,
+    make_sequence_classifier,
 )
 import logging
 from tqdm.auto import tqdm
 from utils import get_optimizer, get_scheduler
 from args import FinetuneArgs
 
+
 class Args(FinetuneArgs):
-    modelpath:Path
+    modelpath: Path
+
 
 def run_epoch(
     model,
@@ -39,6 +42,8 @@ def run_epoch(
     optimizer: Optional[torch.optim.Optimizer] = None,
     scheduler: torch.optim.lr_scheduler.LambdaLR = None,
     epoch=-1,
+    eval_steps=None,
+    dev_dataloader:Optional[DataLoader]=None
 ):
     if optimizer is None:
         model.eval()
@@ -49,7 +54,7 @@ def run_epoch(
     losses = []
     correct_predictions = 0
     total_predictions = 0
-    for batch in dataloader:
+    for step, batch in enumerate(dataloader):
         input_ids = batch.input_ids.to(device)
         token_type_ids = batch.token_type_ids.to(device)
         attention_mask = batch.attention_mask.to(device)
@@ -65,7 +70,7 @@ def run_epoch(
         )
         correct_predictions += curr_correct_predictions
         total_predictions += len(batch.input_ids)
-
+        print(loss)
         loss = torch.mean(loss)
         loss.backward()
         losses.append(loss.detach())
@@ -78,11 +83,16 @@ def run_epoch(
         progress_description = f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}"
         if scheduler is not None:
             progress_description += f", lr:{scheduler.get_last_lr()[0]:.2e}"
-        progress_bar.set_description(
-            progress_description,
-            refresh=True
-        )
-        
+        progress_bar.set_description(progress_description, refresh=True)
+
+        if eval_steps is not None and (step + 1) % eval_steps == 0 and True:
+            model.eval()
+            dev_loss, dev_accuracy = run_epoch(model, dev_dataloader, device=device)
+            model.train()
+            logging.info(f"Step {step+1}:")
+            logging.info(f"Train Loss: {sum(losses)/len(losses):.4f}, Train Acc: {correct_predictions / total_predictions*100:.2f}%")
+            logging.info(f"Dev Loss: {dev_loss:.4f}, Dev Acc: {dev_accuracy*100:.2f}%")
+
     loss = torch.mean(torch.stack(losses))
     return loss, correct_predictions / total_predictions
 
@@ -91,7 +101,7 @@ def finetune(
     gpu_idx: int,
     model: ModelWithLoss,
     tokenized_datasets: DatasetDict,
-    args : Args,
+    args: Args,
 ):
 
     set_random_seed(args.seed)
@@ -111,7 +121,7 @@ def finetune(
             dataset,
             num_replicas=args.num_gpus,
             rank=gpu_idx,
-            shuffle=True,
+            shuffle=False,
         )
         return DataLoader(
             dataset,
@@ -122,10 +132,14 @@ def finetune(
     train_dataloader = get_dataloader(tokenized_datasets.train)
     dev_dataloader = get_dataloader(tokenized_datasets.dev)
 
-    total_train_steps = len(tokenized_datasets.train) * args.num_epochs // args.batch_size
+    total_train_steps = (
+        len(tokenized_datasets.train) * args.num_epochs // args.batch_size
+    )
 
     optimizer = get_optimizer(model, args.lr)
-    scheduler = get_scheduler(optimizer, total_train_steps, schedule=args.scheduler,warmup_proportion=0.1)
+    scheduler = get_scheduler(
+        optimizer, total_train_steps, schedule=args.scheduler, warmup_proportion=0.1
+    )
 
     args.outputdir.mkdir(parents=True, exist_ok=True)
 
@@ -133,7 +147,14 @@ def finetune(
         logging.info(f"EPOCH {epoch}:")
 
         train_loss, train_accuracy = run_epoch(
-            model, train_dataloader, optimizer=optimizer, scheduler=scheduler, device=device, epoch=epoch
+            model,
+            train_dataloader,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            device=device,
+            epoch=epoch,
+            eval_steps=args.eval_steps if gpu_idx==0 else None,
+            dev_dataloader=dev_dataloader,
         )
         torch.distributed.all_reduce(train_loss, op=torch.distributed.ReduceOp.SUM)
         torch.distributed.all_reduce(train_accuracy, op=torch.distributed.ReduceOp.SUM)
@@ -158,19 +179,20 @@ def finetune(
                 "dev_accuracy": dev_accuracy.item(),
                 "lr": args.lr,
                 "batch_size": args.batch_size,
-                "seed": args.seed
+                "seed": args.seed,
             }
-            logging.info(json.dumps(checkpoint,indent=4))
+            logging.info(json.dumps(checkpoint, indent=4))
 
             best_accuracy = 0
-            if (args.outputdir/"best.json").exists():
-                best_checkpoint = json.loads((args.outputdir/"best.json").read_text())
+            if (args.outputdir / "best.json").exists():
+                best_checkpoint = json.loads((args.outputdir / "best.json").read_text())
                 best_accuracy = best_checkpoint["dev_accuracy"]
-            
-            if dev_accuracy>best_accuracy:
+
+            if dev_accuracy > best_accuracy:
                 logging.info("Saving model...")
-                (args.outputdir/"best.json").write_text(json.dumps(checkpoint))
-                torch.save(model,args.outputdir/"bestmodel")
+                (args.outputdir / "best.json").write_text(json.dumps(checkpoint))
+                torch.save(model, args.outputdir / "bestmodel")
+            torch.save(model, args.outputdir / "lastmodel")
 
     distributed_cleanup()
 
@@ -180,12 +202,16 @@ def main():
 
     set_random_seed(args.seed)
 
-    datasets = load_tokenized_glue_dataset(args.gluepath, args.dataset,augmented=args.use_augmented_data)
+    datasets = load_tokenized_glue_dataset(
+        args.gluepath, args.dataset, augmented=args.use_augmented_data
+    )
 
     if args.modelpath is None:
         model = load_pretrained_bert_base()
     else:
         model = load_model_from_disk(args.modelpath)
+
+    model = make_sequence_classifier(model,len(datasets.train.possible_labels))
 
     torch.multiprocessing.spawn(
         finetune,

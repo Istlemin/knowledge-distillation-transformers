@@ -47,7 +47,7 @@ class SCDataset:
 
 class SCDatasetTokenized(torch.utils.data.Dataset):
     def __init__(
-        self, dataset: SCDataset, labels: List[str], tokenizer_name="bert-base-uncased"
+        self, dataset: SCDataset, possible_labels: List[str], tokenizer_name="bert-base-uncased"
     ):
 
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
@@ -76,10 +76,11 @@ class SCDatasetTokenized(torch.utils.data.Dataset):
         if dataset.labels is not None:
             self.labels = torch.tensor(
                 list(
-                    labels.index(label) if label in labels else 0
+                    possible_labels.index(label) if label in possible_labels else 0
                     for label in dataset.labels
                 )
             )
+        self.possible_labels = possible_labels
 
     def __len__(self):
         return len(self.input_ids)
@@ -120,7 +121,7 @@ class SCDatasetsTokenized:
 
 def read_tsv(path, header="infer"):
     return pd.read_csv(
-        path, sep="\t", header=header, on_bad_lines="warn", keep_default_na=False, quotechar='', quoting=3
+        path, sep="\t", header=header, error_bad_lines=False, keep_default_na=False, quotechar='', quoting=3
     )
 
 

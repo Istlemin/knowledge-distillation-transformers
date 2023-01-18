@@ -25,7 +25,7 @@ def setup_logging(path: Optional[Path] = None):
     if path is not None:
         path.mkdir(exist_ok=True, parents=True)
         path = path / "log"
-        path.unlink(missing_ok=True)
+        #path.unlink(missing_ok=True)
         handlers.append(logging.FileHandler(path))
 
     logging.basicConfig(level=logging.INFO, handlers=handlers)

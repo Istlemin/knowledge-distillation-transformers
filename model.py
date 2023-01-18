@@ -4,6 +4,8 @@ from transformers import (
     BertConfig,
     AutoModelForMaskedLM,
     BertForMaskedLM,
+    BertForSequenceClassification,
+    BertPreTrainedModel
 )
 from abc import abstractmethod
 
@@ -112,6 +114,16 @@ def load_untrained_bert_base():
 def load_model_from_disk(path):
     return torch.load(path)
 
+def make_sequence_classifier(model : BertPreTrainedModel, num_labels):
+    config = model.config
+    config.num_labels = num_labels
+    new_model = BertForSequenceClassification(config)
+    state_dict = model.state_dict()
+    state_dict = {
+        k:v for k,v in state_dict.items() if "classifier" not in k
+    }
+    new_model.load_state_dict(state_dict,strict=False)
+    return new_model
 
 if __name__ == "__main__":
     """

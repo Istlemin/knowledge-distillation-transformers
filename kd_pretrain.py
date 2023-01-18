@@ -1,6 +1,7 @@
 from collections import namedtuple
 from glob import glob
 import logging
+from multiprocessing.spawn import prepare
 from pathlib import Path
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
@@ -34,6 +35,7 @@ from tqdm.auto import tqdm
 from typing import NamedTuple
 
 from kd import KD_MLM, KDPred, KDTransformerLayers
+from modeling.bert import prepare_bert_for_kd
 from pretrain import pretrain
 from utils import set_random_seed
 
@@ -71,6 +73,9 @@ def main():
     student = AutoModelForMaskedLM.from_config(
         get_bert_config(args.student_model_config)
     )
+
+    teacher = prepare_bert_for_kd(teacher)
+    student = prepare_bert_for_kd(student)
 
     model = KD_MLM(
         teacher,

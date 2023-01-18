@@ -16,6 +16,7 @@ class FinetuneArgs(TrainArgs):
     dataset:str
     outputdir:Path
     use_augmented_data:bool=False
+    eval_steps: int=None
 
 class KDArgs(Tap):
     quantize:bool=False
