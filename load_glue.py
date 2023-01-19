@@ -9,7 +9,6 @@ from datasets import concatenate_datasets
 from requests import head
 from transformers import AutoTokenizer
 
-import pickle
 import torch
 
 
@@ -109,14 +108,11 @@ class SCDatasetsTokenized:
         self.test = SCDatasetTokenized(datasets.test, datasets.labels)
 
     def save_to_disk(self, path: Path):
-        with path.open("wb") as f:
-            pickle.dump(self, f)
+        torch.save(self,path)
 
     @staticmethod
     def load_from_disk(path: Path):
-        with path.open("rb") as f:
-            res = pickle.load(f)
-        return res
+        return torch.load(path)
 
 
 def read_tsv(path, header="infer"):
@@ -285,9 +281,9 @@ def load_glue_dataset(glue_path, dataset_name, augmented=False):
 
 def load_tokenized_glue_dataset(glue_path: Path, dataset_name, augmented=False):
     if augmented:
-        tokenized_path = glue_path / dataset_name / "tokenized_aug.pickle"
+        tokenized_path = glue_path / dataset_name / "tokenized_aug"
     else:
-        tokenized_path = glue_path / dataset_name / "tokenized.pickle"
+        tokenized_path = glue_path / dataset_name / "tokenized"
 
     if tokenized_path.exists():
         return SCDatasetsTokenized.load_from_disk(tokenized_path)

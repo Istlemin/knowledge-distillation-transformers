@@ -167,7 +167,6 @@ class KD_SequenceClassification(ModelWithLoss):
         #student_output = SequenceClassifierOutput(logits=student_logits,hidden_states=student_reps,attentions=student_atts) 
 
         predictions = torch.argmax(student_output.logits, dim=1)
-        correct_predictions = torch.sum(predictions == batch["labels"])
 
         loss = torch.zeros((1,), device=batch["labels"].device)
 
@@ -181,4 +180,4 @@ class KD_SequenceClassification(ModelWithLoss):
                 # needed for DistributedDataParallell
                 loss += 0 * curr_loss
             # sprint(loss)
-        return loss, correct_predictions
+        return loss, predictions

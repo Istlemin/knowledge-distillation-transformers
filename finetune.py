@@ -16,7 +16,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import random
 import numpy as np
 from load_glue import load_tokenized_glue_dataset
-from utils import distributed_cleanup, distributed_setup, set_random_seed, setup_logging
+from utils import F1_score, distributed_cleanup, distributed_setup, matthews_correlation, set_random_seed, setup_logging
 from model import (
     BertForSequenceClassificationWithLoss,
     get_bert_config,
@@ -34,6 +34,44 @@ from args import FinetuneArgs
 class Args(FinetuneArgs):
     modelpath: Path
 
+def run_eval(model, dataloader:DataLoader,device: Device):
+    model.eval()
+    losses = []
+    all_predictions = [] 
+    all_labels = []
+    for step, batch in enumerate(dataloader):
+        input_ids = batch.input_ids.to(device)
+        token_type_ids = batch.token_type_ids.to(device)
+        attention_mask = batch.attention_mask.to(device)
+        labels = batch.labels.to(device)
+
+        loss, predictions = model(
+            input_ids=input_ids,
+            token_type_ids=token_type_ids,
+            attention_mask=attention_mask,
+            labels=labels,
+        )
+        all_predictions.append(predictions)
+        all_labels.append(labels)
+        
+        loss = torch.mean(loss)
+        losses.append(loss.detach())
+
+    losses = torch.stack(losses)
+    all_predictions = torch.concat(all_predictions)
+    all_labels = torch.concat(all_labels)
+
+    metrics = {}
+    metrics["loss"] = torch.mean(losses).item()
+    metrics["accuracy"] = torch.sum(all_predictions==all_labels).item() / len(all_labels)
+    
+    if all_labels.max()==1:
+        metrics["matthews"] = matthews_correlation(all_predictions,all_labels).item()
+        metrics["F1_score"] = F1_score(all_predictions,all_labels).item()
+    
+    logging.info("Eval results:")
+    logging.info(metrics)
+    return metrics
 
 def run_epoch(
     model,
@@ -41,14 +79,10 @@ def run_epoch(
     device: Device,
     optimizer: Optional[torch.optim.Optimizer] = None,
     scheduler: torch.optim.lr_scheduler.LambdaLR = None,
-    epoch=-1,
     eval_steps=None,
     dev_dataloader:Optional[DataLoader]=None
 ):
-    if optimizer is None:
-        model.eval()
-    else:
-        model.train()
+    model.train()
 
     progress_bar = tqdm(range(len(dataloader)))
     losses = []
@@ -60,38 +94,30 @@ def run_epoch(
         attention_mask = batch.attention_mask.to(device)
         labels = None if batch.labels is None else batch.labels.to(device)
 
-        if optimizer is not None:
-            optimizer.zero_grad()
-        loss, curr_correct_predictions = model(
+        optimizer.zero_grad()
+        loss, predictions = model(
             input_ids=input_ids,
             token_type_ids=token_type_ids,
             attention_mask=attention_mask,
             labels=labels,
         )
-        correct_predictions += curr_correct_predictions
+        correct_predictions += torch.sum(predictions==labels)
         total_predictions += len(batch.input_ids)
-        print(loss)
         loss = torch.mean(loss)
         loss.backward()
         losses.append(loss.detach())
-        if optimizer is not None:
-            optimizer.step()
-        if scheduler is not None:
-            scheduler.step()
+        optimizer.step()
+        scheduler.step()
 
         progress_bar.update(1)
         progress_description = f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}"
-        if scheduler is not None:
-            progress_description += f", lr:{scheduler.get_last_lr()[0]:.2e}"
+        progress_description += f", lr:{scheduler.get_last_lr()[0]:.2e}"
         progress_bar.set_description(progress_description, refresh=True)
 
         if eval_steps is not None and (step + 1) % eval_steps == 0 and True:
-            model.eval()
-            dev_loss, dev_accuracy = run_epoch(model, dev_dataloader, device=device)
-            model.train()
             logging.info(f"Step {step+1}:")
-            logging.info(f"Train Loss: {sum(losses)/len(losses):.4f}, Train Acc: {correct_predictions / total_predictions*100:.2f}%")
-            logging.info(f"Dev Loss: {dev_loss:.4f}, Dev Acc: {dev_accuracy*100:.2f}%")
+            run_eval(model, dev_dataloader, device=device)
+            model.train()
 
     loss = torch.mean(torch.stack(losses))
     return loss, correct_predictions / total_predictions
@@ -103,6 +129,11 @@ def finetune(
     tokenized_datasets: DatasetDict,
     args: Args,
 ):
+    metric = "accuracy"
+    if args.dataset == "CoLA":
+        metric = "matthews"
+    if args.dataset in ["MRPC", "QQP"]:
+        metric = "F1_score"
 
     set_random_seed(args.seed)
     if gpu_idx != -1:
@@ -152,7 +183,6 @@ def finetune(
             optimizer=optimizer,
             scheduler=scheduler,
             device=device,
-            epoch=epoch,
             eval_steps=args.eval_steps if gpu_idx==0 else None,
             dev_dataloader=dev_dataloader,
         )
@@ -161,34 +191,29 @@ def finetune(
         train_loss /= args.num_gpus
         train_accuracy /= args.num_gpus
 
-        dev_loss, dev_accuracy = run_epoch(model, dev_dataloader, device=device)
-        torch.distributed.all_reduce(dev_loss, op=torch.distributed.ReduceOp.SUM)
-        torch.distributed.all_reduce(dev_accuracy, op=torch.distributed.ReduceOp.SUM)
-        dev_loss /= args.num_gpus
-        dev_accuracy /= args.num_gpus
-
         logging.info(f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}")
-        logging.info(f"Dev loss: {dev_loss}\t\tdev accuracy: {dev_accuracy}")
 
         if gpu_idx == 0:
+            metrics = run_eval(model, dev_dataloader, device=device)
             checkpoint = {
                 "epochs": epoch + 1,
                 "train_loss": train_loss.item(),
-                "dev_loss": dev_loss.item(),
+                "dev_loss": metrics["loss"],
                 "train_accuracy": train_accuracy.item(),
-                "dev_accuracy": dev_accuracy.item(),
+                "dev_accuracy": metrics["accuracy"],
+                "dev_metrics": metrics,
                 "lr": args.lr,
                 "batch_size": args.batch_size,
                 "seed": args.seed,
             }
             logging.info(json.dumps(checkpoint, indent=4))
 
-            best_accuracy = 0
+            best_score = 0
             if (args.outputdir / "best.json").exists():
                 best_checkpoint = json.loads((args.outputdir / "best.json").read_text())
-                best_accuracy = best_checkpoint["dev_accuracy"]
+                best_score = best_checkpoint["dev_metrics"][metric]
 
-            if dev_accuracy > best_accuracy:
+            if metrics[metric] > best_score:
                 logging.info("Saving model...")
                 (args.outputdir / "best.json").write_text(json.dumps(checkpoint))
                 torch.save(model, args.outputdir / "bestmodel")

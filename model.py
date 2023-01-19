@@ -53,8 +53,7 @@ class BertForSequenceClassificationWithLoss(ModelWithLoss):
     def forward(self, **batch):
         outputs = self.model(**batch)
         predictions = torch.argmax(outputs.logits, dim=1)
-        correct_predictions = torch.sum(predictions == batch["labels"])
-        return outputs.loss, correct_predictions
+        return outputs.loss, predictions
 
 
 def get_bert_config(config_name):
