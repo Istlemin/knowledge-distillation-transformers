@@ -9,6 +9,7 @@ from datasets import concatenate_datasets
 from requests import head
 from transformers import AutoTokenizer
 
+import pickle
 import torch
 
 
@@ -102,17 +103,25 @@ class SCDatasets:
 
 
 class SCDatasetsTokenized:
-    def __init__(self, datasets: SCDatasets):
-        self.train = SCDatasetTokenized(datasets.train, datasets.labels)
-        self.dev = SCDatasetTokenized(datasets.dev, datasets.labels)
-        self.test = SCDatasetTokenized(datasets.test, datasets.labels)
-
+    def __init__(self, train,dev,test):
+        self.train = train
+        self.dev = dev
+        self.test = test
+    
     def save_to_disk(self, path: Path):
-        torch.save(self,path)
+        torch.save({"train":self.train,"dev":self.dev,"test":self.test}, path)
+
+    @staticmethod
+    def from_datasets(datasets):
+        train = SCDatasetTokenized(datasets.train, datasets.labels)
+        dev = SCDatasetTokenized(datasets.dev, datasets.labels)
+        test = SCDatasetTokenized(datasets.test, datasets.labels)
+        return SCDatasetsTokenized(train,dev,test)
 
     @staticmethod
     def load_from_disk(path: Path):
-        return torch.load(path)
+        datasets_dict = torch.load(path)
+        return SCDatasetsTokenized(**datasets_dict)
 
 
 def read_tsv(path, header="infer"):
@@ -281,15 +290,15 @@ def load_glue_dataset(glue_path, dataset_name, augmented=False):
 
 def load_tokenized_glue_dataset(glue_path: Path, dataset_name, augmented=False):
     if augmented:
-        tokenized_path = glue_path / dataset_name / "tokenized_aug"
+        tokenized_path = glue_path / dataset_name / "tokenized_aug.pickle"
     else:
-        tokenized_path = glue_path / dataset_name / "tokenized"
+        tokenized_path = glue_path / dataset_name / "tokenized.pickle"
 
     if tokenized_path.exists():
         return SCDatasetsTokenized.load_from_disk(tokenized_path)
     else:
         datasets = load_glue_dataset(glue_path, dataset_name, augmented=augmented)
-        datasets = SCDatasetsTokenized(datasets)
+        datasets = SCDatasetsTokenized.from_datasets(datasets)
         datasets.save_to_disk(tokenized_path)
         return datasets
 
