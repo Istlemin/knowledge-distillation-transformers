@@ -194,7 +194,7 @@ def run_data_augmentation_batch(
         "sentence": sentence,
     }
     if dataset.sentence2 is not None:
-        data_dict["sentenec2"] = sentence2
+        data_dict["sentence2"] = sentence2
     
     return pd.DataFrame(data_dict)
 

@@ -68,6 +68,8 @@ def get_scheduler(optimizer,total_steps, schedule="linear_warmup", warmup_propor
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lambda s: 1)
 
 def matthews_correlation(predictions,labels):
+    predictions = predictions.bool()
+    labels = labels.bool()
     n00 = torch.sum(~predictions & ~labels)
     n01 = torch.sum(~predictions & labels)
     n10 = torch.sum(predictions & ~labels)
@@ -80,6 +82,8 @@ def matthews_correlation(predictions,labels):
     return (n11*n00-n10*n01)/torch.sqrt(n_1*n_0*n1_*n0_)
 
 def F1_score(predictions,labels):
+    predictions = predictions.bool()
+    labels = labels.bool()
     true_positive = torch.sum(predictions & labels)
     false_positive = torch.sum(predictions & ~labels)
     false_negative = torch.sum(~predictions & labels)

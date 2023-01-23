@@ -4,6 +4,7 @@ from pathlib import Path
 from tokenize import Token
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
+from kd import print_model
 import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
@@ -56,10 +57,10 @@ def run_eval(model, dataloader:DataLoader,device: Device):
         
         loss = torch.mean(loss)
         losses.append(loss.detach())
-
+        
     losses = torch.stack(losses)
-    all_predictions = torch.concat(all_predictions)
-    all_labels = torch.concat(all_labels)
+    all_predictions = torch.cat(all_predictions)
+    all_labels = torch.cat(all_labels)
 
     metrics = {}
     metrics["loss"] = torch.mean(losses).item()
@@ -103,8 +104,12 @@ def run_epoch(
         )
         correct_predictions += torch.sum(predictions==labels)
         total_predictions += len(batch.input_ids)
-        loss = torch.mean(loss)
+        loss = torch.mean(loss) 
         loss.backward()
+        #print_model(model.module.teacher,batch.input_ids,teacher_output.hidden_states,teacher_output.attentions,teacher_output.logits, grad=False)
+        #print_model(model.module.student,batch.input_ids,student_output.hidden_states,student_output.attentions,student_output.logits)
+        #print(student_output.logits.grad[:5].tolist())
+        #print(loss.item())
         losses.append(loss.detach())
         optimizer.step()
         scheduler.step()
@@ -113,7 +118,7 @@ def run_epoch(
         progress_description = f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}"
         progress_description += f", lr:{scheduler.get_last_lr()[0]:.2e}"
         progress_bar.set_description(progress_description, refresh=True)
-
+        
         if eval_steps is not None and (step + 1) % eval_steps == 0 and True:
             logging.info(f"Step {step+1}:")
             run_eval(model, dev_dataloader, device=device)
@@ -128,12 +133,14 @@ def finetune(
     model: ModelWithLoss,
     tokenized_datasets: DatasetDict,
     args: Args,
-):
-    metric = "accuracy"
-    if args.dataset == "CoLA":
-        metric = "matthews"
-    if args.dataset in ["MRPC", "QQP"]:
-        metric = "F1_score"
+):  
+    metric = args.metric
+    if metric is None:
+        metric = "accuracy"
+        if args.dataset == "CoLA":
+            metric = "matthews"
+        if args.dataset in ["MRPC", "QQP"]:
+            metric = "F1_score"
 
     set_random_seed(args.seed)
     if gpu_idx != -1:
@@ -152,7 +159,7 @@ def finetune(
             dataset,
             num_replicas=args.num_gpus,
             rank=gpu_idx,
-            shuffle=False,
+            shuffle=True,
         )
         return DataLoader(
             dataset,
@@ -173,6 +180,8 @@ def finetune(
     )
 
     args.outputdir.mkdir(parents=True, exist_ok=True)
+    
+    #run_eval(model, dev_dataloader, device=device)
 
     for epoch in range(0, args.num_epochs):
         logging.info(f"EPOCH {epoch}:")
@@ -208,16 +217,19 @@ def finetune(
             }
             logging.info(json.dumps(checkpoint, indent=4))
 
-            best_score = 0
+            best_score = 1e18 if metric=="loss" else 0
             if (args.outputdir / "best.json").exists():
                 best_checkpoint = json.loads((args.outputdir / "best.json").read_text())
                 best_score = best_checkpoint["dev_metrics"][metric]
 
-            if metrics[metric] > best_score:
+            is_better = metrics[metric] > best_score
+            if metric=="loss":
+                is_better = metrics[metric] < best_score
+            if is_better:
                 logging.info("Saving model...")
                 (args.outputdir / "best.json").write_text(json.dumps(checkpoint))
-                torch.save(model, args.outputdir / "bestmodel")
-            torch.save(model, args.outputdir / "lastmodel")
+                model.module.save(args.outputdir / "bestmodel")
+            model.module.save(args.outputdir / "lastmodel")
 
     distributed_cleanup()
 

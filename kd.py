@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, List, NamedTuple, Union
 
 import torch
@@ -21,10 +22,14 @@ Model = Union[BertForMaskedLM, BertForSequenceClassification]
 
 
 def soft_cross_entropy(predicts, targets):
+    # print("soft cross:")
+    # print(predicts.flatten()[:5].tolist())
+    # print(targets.flatten()[:5].tolist())
     predicts_likelihood = torch.nn.functional.log_softmax(predicts, dim=-1)
     targets_prob = torch.nn.functional.softmax(targets, dim=-1)
-    return (-targets_prob * predicts_likelihood).mean()
-
+    loss = (-targets_prob * predicts_likelihood).mean()
+    # print(loss.item())
+    return loss
 
 class KDPred(KDLoss):
     def __init__(self):
@@ -72,7 +77,10 @@ class KDHiddenStates(KDLoss):
             self.student_to_teacher = None
         else:
             self.student_to_teacher = nn.Linear(student_cfg.hidden_size, teacher_cfg.hidden_size)
-        
+            set_random_seed(0)
+            self.student_to_teacher.weight = torch.nn.Parameter((torch.rand((768, 312))*2-1)*0.05)
+            self.student_to_teacher.bias = torch.nn.Parameter(torch.rand((768,))*2-1)
+
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         loss = 0 
         for student_hidden, teacher_hidden_layer in zip(student_output.hidden_states, self.layer_map):
@@ -94,6 +102,7 @@ class KDTransformerLayers(KDLoss):
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         attention_loss = self.kd_attention(teacher_output, student_output)
         hidden_states_loss = self.kd_hidden_states(teacher_output, student_output)
+        #print(f"att_loss: {attention_loss}, rep_loss: {hidden_states_loss}")
         return attention_loss + hidden_states_loss
 
 
@@ -132,6 +141,37 @@ class KD_MLM(ModelWithLoss):
             # sprint(loss)
         return loss, correct_predictions
 
+    def save(self,path):
+        torch.save(self.student,path)
+
+def print_model(model: BertForSequenceClassification, input_ids,reps,attns,logits, grad=True):
+    print("Model weights:")
+    print(model.bert.embeddings.word_embeddings.weight.flatten()[:5].tolist())
+    print(model.bert.encoder.layer[0].attention.self.query.weight.flatten()[:5].tolist())
+    print(model.bert.encoder.layer[0].intermediate.dense.weight.flatten()[:5].tolist())
+    print(model.bert.encoder.layer[-1].attention.self.query.weight.flatten()[:5].tolist())
+    print(model.bert.encoder.layer[-1].intermediate.dense.weight.flatten()[:5].tolist())
+    print(model.bert.pooler.dense.weight.flatten()[:5].tolist())
+    print(model.classifier.weight.flatten()[:5].tolist())
+
+    if grad:
+        print("Model grads:")
+        print(model.bert.embeddings.word_embeddings.weight.grad.flatten()[:5].tolist())
+        print(model.bert.encoder.layer[0].attention.self.query.weight.grad.flatten()[:5].tolist())
+        print(model.bert.encoder.layer[0].intermediate.dense.weight.grad.flatten()[:5].tolist())
+        print(model.bert.encoder.layer[-1].attention.self.query.weight.grad.flatten()[:5].tolist())
+        print(model.bert.encoder.layer[-1].intermediate.dense.weight.grad.flatten()[:5].tolist())
+        print(model.bert.pooler.dense.weight.grad.flatten()[:5].tolist())
+        print(model.classifier.weight.grad.flatten()[:5].tolist())
+
+    print("activations:")
+    print(input_ids[0].flatten()[:5].tolist())
+    print(reps[0].flatten()[:5].tolist())
+    print(reps[-1].flatten()[:5].tolist())
+    print(attns[0].flatten()[:5].tolist())
+    print(attns[-1].flatten()[:5].tolist())
+    print(logits.flatten()[:5].tolist())
+
 
 class KD_SequenceClassification(ModelWithLoss):
     def __init__(
@@ -150,22 +190,16 @@ class KD_SequenceClassification(ModelWithLoss):
         self.student = student
 
     def forward(self, epoch=-1, **batch):
-        self.teacher.eval()
-        set_random_seed(0)
+        #self.teacher.eval()
+        #set_random_seed(0)
         teacher_output = self.teacher(
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )
-        set_random_seed(0)
+        #set_random_seed(0)
         student_output = self.student(
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )
-        
-        # student_logits, student_atts, student_reps = self.student(input_ids=batch["input_ids"], 
-        #         token_type_ids=batch["token_type_ids"],
-        #         attention_mask=batch["attention_mask"])
-
-        #student_output = SequenceClassifierOutput(logits=student_logits,hidden_states=student_reps,attentions=student_atts) 
-
+       
         predictions = torch.argmax(student_output.logits, dim=1)
 
         loss = torch.zeros((1,), device=batch["labels"].device)
@@ -179,5 +213,8 @@ class KD_SequenceClassification(ModelWithLoss):
                 # hack to make sure all losses are part of loss computation,
                 # needed for DistributedDataParallell
                 loss += 0 * curr_loss
-            # sprint(loss)
-        return loss, predictions
+        
+        return loss, predictions#, student_output, teacher_output
+    
+    def save(self,path):
+        torch.save(self.student,path)

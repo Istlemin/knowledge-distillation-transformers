@@ -53,7 +53,10 @@ def main():
     teacher = load_model_from_disk(args.teacher_model)
 
     if args.student_model_path is not None:
-        student = AutoModelForSequenceClassification.from_pretrained(args.student_model_path)
+        try:
+            student = AutoModelForSequenceClassification.from_pretrained(args.student_model_path)
+        except OSError:
+            student = torch.load(args.student_model_path)
     else:
         student = AutoModelForSequenceClassification.from_config(
             get_bert_config(args.student_model_config)
@@ -64,6 +67,7 @@ def main():
         print("KD finetune on quantized student")
         student = prepare_bert_for_quantization(student)
     else:
+        #pass
         student = prepare_bert_for_kd(student)
     
     kd_losses_dict = {

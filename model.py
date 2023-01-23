@@ -43,6 +43,8 @@ class BertForMaskedLMWithLoss(ModelWithLoss):
         outputs = self.model(input_ids, attention_mask=~is_masked)
         return masked_lm_loss(outputs, input_ids, is_masked, output_ids)
 
+    def save(self,path):
+        torch.save(self.model,path)
 
 class BertForSequenceClassificationWithLoss(ModelWithLoss):
     def __init__(self, model: BertForMaskedLM):
@@ -55,6 +57,8 @@ class BertForSequenceClassificationWithLoss(ModelWithLoss):
         predictions = torch.argmax(outputs.logits, dim=1)
         return outputs.loss, predictions
 
+    def save(self,path):
+        torch.save(self.model,path)
 
 def get_bert_config(config_name):
     config: BertConfig = BertConfig.from_pretrained("bert-base-uncased", num_labels=2)
