@@ -54,7 +54,7 @@ def main():
 
     if args.student_model_path is not None:
         try:
-            student = AutoModelForSequenceClassification.from_pretrained(args.student_model_path)
+            student = AutoModelForSequenceClassification.from_pretrained(args.student_model_path,num_labels=len(datasets.train.possible_labels),ignore_mismatched_sizes=True)
         except OSError:
             student = torch.load(args.student_model_path)
     else:

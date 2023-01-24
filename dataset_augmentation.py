@@ -40,6 +40,8 @@ def tokenize_to_words(sentence, tokenizer):
     words = []
     for token in tokens:
         if token[0] == "#":
+            if len(words)==0:
+                words.append([])
             words[-1].append(token)
         else:
             words.append([token])
@@ -131,6 +133,8 @@ def augment_sentence(
     batch_size=8,
 ):
     words = tokenize_to_words(sentence, tokenizer)
+
+    words = words[:64]
 
     words_for_glove = [i for i in range(len(words)) if len(words[i]) > 1]
     words_for_mlm_model = [i for i in range(len(words)) if len(words[i]) == 1]
