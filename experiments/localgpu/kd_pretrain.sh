@@ -9,7 +9,7 @@
 #base_url="/jmain02/home/J2AD015/axf03/fxe31-axf03/project/"
 base_url="/local/scratch-3/fwe21/project/"
 seed=0
-dataset_path=$base_url"wikipedia_mlm128/"
+dataset_path=$base_url"wikipedia_mlm128_2/"
 teacher_model_path=$base_url"models/pretrained_bert_mlm.pt" 
 checkpoint_path=$base_url"checkpoints/kd_pretrain_lr1e-4_seed0" 
 

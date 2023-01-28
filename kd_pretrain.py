@@ -1,44 +1,19 @@
-from collections import namedtuple
-from glob import glob
-import logging
-from multiprocessing.spawn import prepare
 from pathlib import Path
-from typing import Optional
-from datasets.dataset_dict import DatasetDict
-from datasets.arrow_dataset import Dataset
 import torch
-from torch.cuda import Device
-from torch.utils.data import DataLoader
-from torch.optim import Adam
-import time
 from pathlib import Path
 import argparse
 import torch
-import random
-import numpy as np
-from transformers import AutoModelForMaskedLM, BertForMaskedLM
+from transformers import AutoModelForMaskedLM
 
-from load_glue import (
-    load_glue_sentence_classification,
-    load_tokenized_dataset,
-    load_batched_dataset,
-)
 from model import (
     get_bert_config,
-    load_pretrained_bert_base,
     load_model_from_disk,
-    load_untrained_bert_base,
 )
 
-from tqdm.auto import tqdm
-
-from typing import NamedTuple
-
-from kd import KD_MLM, KDPred, KDTransformerLayers
+from kd import KD_MLM, KDTransformerLayers
 from modeling.bert import prepare_bert_for_kd
 from pretrain import pretrain
 from utils import set_random_seed
-
 
 def main():
     print("KD Training")
@@ -49,7 +24,7 @@ def main():
         dest="teacher_model_path",
         type=Path,
     )
-    parser.add_argument("--student_model_config", type=str, default="small12h")
+    parser.add_argument("--student_model_config", type=str, default="TinyBERT")
     parser.add_argument("--checkpoint_path", type=Path)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--seed", type=int, default=0)

@@ -1,43 +1,24 @@
-from collections import namedtuple
 from glob import glob
 import logging
 from pathlib import Path
 from typing import Optional
-from datasets.dataset_dict import DatasetDict
 from datasets.arrow_dataset import Dataset
 import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
-from torch.optim import Adam
-import torch.nn as nn
-import torch.optim as optim
-import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
-import os
-import time
 from pathlib import Path
 import argparse
 import torch
-import random
-import numpy as np
 from transformers import (
-    AutoModelForMaskedLM,
-    BertForMaskedLM,
-    get_linear_schedule_with_warmup,
+    AutoModelForMaskedLM
 )
 
-from load_glue import (
-    load_glue_sentence_classification,
-    load_tokenized_dataset,
-    load_batched_dataset,
-)
 from model import (
     BertForMaskedLMWithLoss,
     ModelWithLoss,
     get_bert_config,
-    load_pretrained_bert_base,
     load_model_from_disk,
-    load_untrained_bert_base,
 )
 from utils import get_optimizer, get_scheduler
 
@@ -96,7 +77,7 @@ def run_epoch(
             optimizer.zero_grad()
 
         loss, batch_correct_predictions = model(
-            input_ids=masked_tokens, is_masked=is_masked, output_ids=tokens
+            input_ids=masked_tokens, is_masked=tokens!=0, output_ids=tokens
         )
         loss = loss.mean()
         batch_correct_predictions = batch_correct_predictions.sum()

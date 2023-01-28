@@ -77,9 +77,9 @@ class KDHiddenStates(KDLoss):
             self.student_to_teacher = None
         else:
             self.student_to_teacher = nn.Linear(student_cfg.hidden_size, teacher_cfg.hidden_size)
-            set_random_seed(0)
-            self.student_to_teacher.weight = torch.nn.Parameter((torch.rand((768, 312))*2-1)*0.05)
-            self.student_to_teacher.bias = torch.nn.Parameter(torch.rand((768,))*2-1)
+            # set_random_seed(0)
+            # self.student_to_teacher.weight = torch.nn.Parameter((torch.rand((768, 312))*2-1)*0.05)
+            # self.student_to_teacher.bias = torch.nn.Parameter(torch.rand((768,))*2-1)
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         loss = 0 
