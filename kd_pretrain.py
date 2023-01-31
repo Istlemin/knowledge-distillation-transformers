@@ -3,14 +3,14 @@ import torch
 from pathlib import Path
 import argparse
 import torch
-from transformers import AutoModelForMaskedLM
+from transformers import AutoModelForPreTraining
 
 from model import (
     get_bert_config,
     load_model_from_disk,
 )
 
-from kd import KD_MLM, KDTransformerLayers
+from kd import KD_PreTraining, KDTransformerLayers
 from modeling.bert import prepare_bert_for_kd
 from pretrain import pretrain
 from utils import set_random_seed
@@ -41,23 +41,22 @@ def main():
     if args.teacher_model_path is not None:
         teacher = load_model_from_disk(args.teacher_model_path)
     else:
-        teacher = AutoModelForMaskedLM.from_pretrained(
-            "bert-base-uncased", num_labels=5
-        )
+        teacher = AutoModelForPreTraining.from_pretrained("bert-base-uncased")
 
-    student = AutoModelForMaskedLM.from_config(
+    student = AutoModelForPreTraining.from_config(
         get_bert_config(args.student_model_config)
     )
 
     teacher = prepare_bert_for_kd(teacher)
     student = prepare_bert_for_kd(student)
 
-    model = KD_MLM(
+    model = KD_PreTraining(
         teacher,
         student,
         [KDTransformerLayers(teacher.config, student.config)],
     )
 
+    #pretrain(0,model,args)
     torch.multiprocessing.spawn(
         pretrain,
         args=(model, args),

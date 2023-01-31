@@ -107,6 +107,8 @@ class MLMDatasetGenerator:
             for i in range(0, len(doc_tokens), doc_tokens_per_seq)
         ]
 
+    #def docs_tokens_to_instances()
+
 
 def transpose_dict(list_of_dicts: List[Dict]):
     res = defaultdict(list)

@@ -5,7 +5,8 @@ from transformers import (
     AutoModelForMaskedLM,
     BertForMaskedLM,
     BertForSequenceClassification,
-    BertPreTrainedModel
+    BertPreTrainedModel,
+    BertForPreTraining
 )
 from abc import abstractmethod
 
@@ -31,6 +32,31 @@ def masked_lm_loss(model_outputs, input_ids, is_masked, output_ids):
     )
     return loss, correct_predictions
 
+def pretraining_loss(model_outputs, output_ids, is_next_sentence):
+    word_correct_predictions = model_outputs.prediction_logits.argmax(dim=-1)==output_ids
+    next_correct_predictions = model_outputs.seq_relationship_logits.argmax(dim=-1)==is_next_sentence
+    return model_outputs.loss, word_correct_predictions, next_correct_predictions
+
+class BertForPreTrainingWithLoss(ModelWithLoss):
+    def __init__(self, model: BertForPreTraining):
+        super().__init__()
+
+        self.model = model
+        self.model.bert.requires_grad_(False)
+
+    def forward(self, input_ids, is_masked, segment_ids, output_ids, is_next_sentence):
+        outputs = self.model(
+            input_ids,
+            attention_mask=~is_masked,
+            token_type_ids=segment_ids,
+            return_dict=True,
+            labels=output_ids,
+            next_sentence_label=is_next_sentence.long()
+        )
+        return pretraining_loss(outputs,output_ids, is_next_sentence)
+
+    def save(self,path):
+        torch.save(self.model,path)
 
 class BertForMaskedLMWithLoss(ModelWithLoss):
     def __init__(self, model: BertForMaskedLM):

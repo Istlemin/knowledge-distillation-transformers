@@ -5,7 +5,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from model import ModelWithLoss, masked_lm_loss
+from model import ModelWithLoss, masked_lm_loss, pretraining_loss
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
 from transformers import BertForMaskedLM, BertForSequenceClassification, BertConfig
 from modeling.bert import prepare_bert_for_kd
@@ -105,6 +105,45 @@ class KDTransformerLayers(KDLoss):
         #print(f"att_loss: {attention_loss}, rep_loss: {hidden_states_loss}")
         return attention_loss + hidden_states_loss
 
+class KD_PreTraining(ModelWithLoss):
+    def __init__(self, teacher: Model, student: Model, kd_losses: List[KDLoss]):
+        super().__init__()
+
+        self.kd_losses = nn.ModuleList(kd_losses)
+        self.teacher = teacher
+        self.teacher.requires_grad_(False)
+        self.student = student
+
+    def forward(self, input_ids, is_masked, segment_ids, output_ids, is_next_sentence):
+        teacher_output = self.teacher.forward(
+            input_ids,
+            attention_mask=~is_masked,
+            token_type_ids=segment_ids,
+            return_dict=True,
+            output_hidden_states=True,
+            output_attentions=True,
+        )
+        student_output = self.student.forward(
+            input_ids,
+            attention_mask=~is_masked,
+            token_type_ids=segment_ids,
+            return_dict=True,
+            output_hidden_states=True,
+            output_attentions=True,
+            labels=output_ids,
+            next_sentence_label=is_next_sentence.long()
+        )
+
+        pretrain_loss, word_correct_predictions, next_correct_prediction = pretraining_loss(student_output,output_ids, is_next_sentence)
+
+        loss = torch.zeros((1,), device=input_ids.device)
+        for kd_loss in self.kd_losses:
+            loss += kd_loss(teacher_output, student_output)
+            # sprint(loss)
+        return loss+pretrain_loss, word_correct_predictions, next_correct_prediction
+
+    def save(self,path):
+        torch.save(self.student,path)
 
 class KD_MLM(ModelWithLoss):
     def __init__(self, teacher: Model, student: Model, kd_losses: List[KDLoss]):
@@ -115,10 +154,11 @@ class KD_MLM(ModelWithLoss):
         self.teacher.requires_grad_(False)
         self.student = student
 
-    def forward(self, input_ids, is_masked, output_ids):
+    def forward(self, input_ids, is_masked, segment_ids, output_ids):
         teacher_output = self.teacher.forward(
             input_ids,
             attention_mask=~is_masked,
+            token_type_ids=segment_ids,
             return_dict=True,
             output_hidden_states=True,
             output_attentions=True,
@@ -126,6 +166,7 @@ class KD_MLM(ModelWithLoss):
         student_output = self.student.forward(
             input_ids,
             attention_mask=~is_masked,
+            token_type_ids=segment_ids,
             return_dict=True,
             output_hidden_states=True,
             output_attentions=True,

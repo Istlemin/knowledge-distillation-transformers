@@ -1,6 +1,7 @@
 from glob import glob
 import logging
 from pathlib import Path
+from socket import IP_DEFAULT_MULTICAST_TTL
 from typing import Optional
 from datasets.arrow_dataset import Dataset
 import torch
@@ -11,11 +12,11 @@ from pathlib import Path
 import argparse
 import torch
 from transformers import (
-    AutoModelForMaskedLM
+    AutoModelForPreTraining
 )
 
 from model import (
-    BertForMaskedLMWithLoss,
+    BertForPreTrainingWithLoss,
     ModelWithLoss,
     get_bert_config,
     load_model_from_disk,
@@ -23,7 +24,7 @@ from model import (
 from utils import get_optimizer, get_scheduler
 
 from tqdm.auto import tqdm
-
+import numpy as np
 from typing import NamedTuple
 from utils import distributed_setup, distributed_cleanup, set_random_seed, setup_logging
 
@@ -32,15 +33,23 @@ class MLMBatch(NamedTuple):
     tokens: torch.tensor
     masked_tokens: torch.tensor
     is_masked: torch.tensor
+    segment_ids: torch.tensor
+    is_random_next: torch.tensor
 
 
 class MLMDataset(torch.utils.data.Dataset):
     def __init__(self, path):
         self.dataset: Dataset = Dataset.load_from_disk(path)
         self.dataset.set_format("torch")
-        self.tokens = self.dataset["tokens"]
-        self.masked_tokens = self.dataset["masked_tokens"]
-        self.is_masked = self.dataset["is_masked"]
+        # self.tokens = self.dataset["tokens"]
+        # self.masked_tokens = self.dataset["masked_tokens"]
+        # self.is_masked = self.dataset["is_masked"]
+
+        self.tokens = self.dataset["token_ids"]
+        self.masked_tokens = self.dataset["masked_token_ids"]
+        self.is_masked = self.dataset["masked_positions"]
+        self.segment_ids = self.dataset["segment_ids"]
+        self.is_random_next = self.dataset["is_random_next"]
 
     def __len__(self):
         return len(self.dataset)
@@ -50,6 +59,8 @@ class MLMDataset(torch.utils.data.Dataset):
             tokens=self.tokens[item],
             masked_tokens=self.masked_tokens[item],
             is_masked=self.is_masked[item],
+            segment_ids=self.segment_ids[item],
+            is_random_next=self.is_random_next[item],
         )
 
 
@@ -65,26 +76,29 @@ def run_epoch(
     progress_bar = tqdm(range(len(dataloader)))
 
     losses = []
-    correct_predictions = 0
-    total_predictions = 0
+    correct_word_predictions = []
+    correct_next_predictions = []
 
     for i, batch in enumerate(dataloader):
         tokens = batch.tokens[:, :].to(device)
         masked_tokens = batch.masked_tokens[:, :].to(device)
         is_masked = batch.is_masked[:, :].to(device)
+        segment_ids = batch.segment_ids[:, :].to(device)
+        is_random_next = batch.is_random_next[:].to(device)
+        if i==0:
+            print(tokens[0].tolist())
         batch_size = len(tokens)
         if optimizer is not None:
             optimizer.zero_grad()
 
-        loss, batch_correct_predictions = model(
-            input_ids=masked_tokens, is_masked=tokens!=0, output_ids=tokens
+        loss, batch_word_correct_predictions, batch_next_correct_predictions = model(
+            input_ids=masked_tokens, is_masked=tokens==0,segment_ids=segment_ids, output_ids=tokens,is_next_sentence=~is_random_next
         )
         loss = loss.mean()
-        batch_correct_predictions = batch_correct_predictions.sum()
-
-        total_predictions += torch.sum(is_masked)
-        correct_predictions += batch_correct_predictions
-
+        for j in range(len(is_masked)):
+            correct_word_predictions += batch_word_correct_predictions[j][is_masked[j]].tolist()
+        correct_next_predictions += batch_next_correct_predictions.tolist()
+        
         loss.backward()
         losses.append(loss.detach().cpu())
 
@@ -95,12 +109,15 @@ def run_epoch(
 
         progress_bar.update(1)
         progress_bar.set_description(
-            f"Loss: {sum(losses)/len(losses):.4f}, Acc: {correct_predictions / total_predictions*100:.2f}%, device:{device}, lr:{scheduler.get_last_lr()[0]:.2e}",
+            f"Loss: {sum(losses)/len(losses):.4f}, " + 
+            f"Word Acc: {np.mean(correct_word_predictions)*100:.2f}%, " +
+            f"Next Acc: {np.mean(correct_next_predictions)*100:.2f}%, " +
+            f"device:{device}, lr:{scheduler.get_last_lr()[0]:.2e}",
             refresh=True,
         )
 
     loss = torch.mean(torch.stack(losses))
-    return loss, correct_predictions / total_predictions
+    return loss, np.mean(correct_word_predictions), np.mean(correct_next_predictions)
 
 
 def pretrain(
@@ -109,16 +126,19 @@ def pretrain(
     args,
 ):
     dataset_size = sum(
-        len(Dataset.load_from_disk(args.dataset_path / str(i)))
+        len(Dataset.load_from_disk(args.dataset_path / f"part_{i}"))
         for i in range(args.dataset_parts)
     )
 
     set_random_seed(args.seed)
     if gpu_idx != -1:
-        distributed_setup(gpu_idx, args.num_gpus, args.port)
         model = model.to(gpu_idx)
-        model = DDP(model, device_ids=[gpu_idx], find_unused_parameters=True)
         device = torch.device(gpu_idx)
+
+        distributed_setup(gpu_idx, args.num_gpus, args.port)
+        model = DDP(model, device_ids=[gpu_idx], find_unused_parameters=True)
+        
+        #model = torch.nn.DataParallel(model, device_ids=list(range(args.num_gpus)))
     else:
         device = torch.device("cpu")
 
@@ -147,11 +167,12 @@ def pretrain(
 
     for epoch in range(start_epoch, args.num_epochs):
         for dataset_part_idx in range(start_part, args.dataset_parts):
-            dataset = MLMDataset(args.dataset_path / str(dataset_part_idx))
+            dataset = MLMDataset(args.dataset_path / f"part_{dataset_part_idx}")
 
             train_sampler = torch.utils.data.distributed.DistributedSampler(
                 dataset, num_replicas=args.num_gpus, rank=gpu_idx, shuffle=True
             )
+            #train_sampler = None
 
             train_dataloader = DataLoader(
                 dataset,
@@ -164,7 +185,7 @@ def pretrain(
             logging.info(f"EPOCH {epoch}, PART {dataset_part_idx}:")
 
             model.train()
-            train_loss, train_accuracy = run_epoch(
+            train_loss, train_accuracy, _ = run_epoch(
                 model,
                 train_dataloader,
                 optimizer=optimizer,
@@ -220,15 +241,16 @@ def main():
 
     set_random_seed(args.seed)
     if args.model_path is None:
-        model = AutoModelForMaskedLM.from_config(get_bert_config("tiny"))
+        model = AutoModelForPreTraining.from_config(get_bert_config("TinyBERT"))
     else:
         model = load_model_from_disk(args.model_path)
 
-    # model = AutoModelForMaskedLM.from_pretrained("bert-base-uncased", num_labels=5)
+    # model = AutoModelForPretraining.from_pretrained("bert-base-uncased", num_labels=5)
 
+    #pretrain(0,BertForPretrainingWithLoss(model), args)
     torch.multiprocessing.spawn(
         pretrain,
-        args=(BertForMaskedLMWithLoss(model), args),
+        args=(BertForPreTrainingWithLoss(model), args),
         nprocs=args.num_gpus,
         join=True,
     )
