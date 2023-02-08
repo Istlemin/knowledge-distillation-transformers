@@ -140,7 +140,7 @@ class KD_PreTraining(ModelWithLoss):
         for kd_loss in self.kd_losses:
             loss += kd_loss(teacher_output, student_output)
             # sprint(loss)
-        return loss+pretrain_loss, word_correct_predictions, next_correct_prediction
+        return torch.stack([loss[0],pretrain_loss]), word_correct_predictions, next_correct_prediction
 
     def save(self,path):
         torch.save(self.student,path)

@@ -91,32 +91,30 @@ def run_epoch(
         if optimizer is not None:
             optimizer.zero_grad()
 
-        loss, batch_word_correct_predictions, batch_next_correct_predictions = model(
+        batch_losses, batch_word_correct_predictions, batch_next_correct_predictions = model(
             input_ids=masked_tokens, is_masked=tokens==0,segment_ids=segment_ids, output_ids=tokens,is_next_sentence=~is_random_next
         )
-        loss = loss.mean()
+        loss = batch_losses.mean()
         for j in range(len(is_masked)):
             correct_word_predictions += batch_word_correct_predictions[j][is_masked[j]].tolist()
         correct_next_predictions += batch_next_correct_predictions.tolist()
         
         loss.backward()
-        losses.append(loss.detach().cpu())
+        losses.append(batch_losses.detach().cpu())
 
         if optimizer is not None:
             optimizer.step()
         if scheduler is not None:
             scheduler.step()
 
+        desc = f"Loss: " + "\t".join([f"{x:.4f}" for x  in torch.mean(torch.stack(losses),dim=0).tolist()]) + "\t"
+        desc += f"Word Acc: {np.mean(correct_word_predictions)*100:.2f}%,\t" + \
+            f"Next Acc: {np.mean(correct_next_predictions)*100:.2f}%,\t" + \
+            f"device:{device},\tlr:{scheduler.get_last_lr()[0]:.2e}"
+        progress_bar.set_description(desc)
         progress_bar.update(1)
-        progress_bar.set_description(
-            f"Loss: {sum(losses)/len(losses):.4f}, " + 
-            f"Word Acc: {np.mean(correct_word_predictions)*100:.2f}%, " +
-            f"Next Acc: {np.mean(correct_next_predictions)*100:.2f}%, " +
-            f"device:{device}, lr:{scheduler.get_last_lr()[0]:.2e}",
-            refresh=True,
-        )
 
-    loss = torch.mean(torch.stack(losses))
+    loss = torch.mean(torch.stack(losses),dim=0)
     return loss, np.mean(correct_word_predictions), np.mean(correct_next_predictions)
 
 
@@ -194,6 +192,10 @@ def pretrain(
             )
 
             if gpu_idx == 0:
+                logging.info(
+                    f"Train losses: {train_loss}"
+                )
+                train_loss = train_loss.sum()
                 logging.info(
                     f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}"
                 )

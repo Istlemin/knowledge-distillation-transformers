@@ -1,5 +1,5 @@
 import argparse
-from transformers import AutoModelForSequenceClassification
+from transformers import AutoModelForPreTraining
 from model import get_bert_config
 from pathlib import Path
 import torch
@@ -12,7 +12,7 @@ def main():
     parser.add_argument("--model_save_path", type=Path, required=True)
     args = parser.parse_args()
 
-    model = AutoModelForSequenceClassification.from_config(get_bert_config(args.model))
+    model = AutoModelForPreTraining.from_config(get_bert_config(args.model))
 
     if args.type=="kd_pretrain":
         checkpoint = torch.load(args.checkpoint_path, map_location="cpu")
@@ -24,7 +24,7 @@ def main():
         assert len(missing_keys) + len(unexpected_keys) < 20, f"{missing_keys}, {unexpected_keys}"
 
 
-    torch.save(model,args.model_save_path)
+    model.save_pretrained(args.model_save_path)
 
 if __name__=="__main__":
     main()

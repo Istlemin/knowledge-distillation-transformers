@@ -46,7 +46,7 @@ def main():
     student = AutoModelForPreTraining.from_config(
         get_bert_config(args.student_model_config)
     )
-
+    
     teacher = prepare_bert_for_kd(teacher)
     student = prepare_bert_for_kd(student)
 
