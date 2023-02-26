@@ -11,6 +11,7 @@ from transformers import AutoTokenizer
 
 import pickle
 import torch
+from tqdm import tqdm
 
 
 class SCBatch(NamedTuple):
@@ -44,6 +45,24 @@ class SCDataset:
             None if sentence2_col is None else df[sentence2_col].tolist(),
         )
 
+def batched_tokenization(tokenizer,text_samples,max_length=64,batch_size=1000):
+    tokenized_datasets = []
+
+    for i in tqdm(range(0,len(text_samples),batch_size)):
+        tokenized_datasets.append(tokenizer(
+                text_samples[i:i+batch_size],
+                max_length=max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt",
+            ).data)
+        
+    input_ids = torch.cat([tokenized_dataset["input_ids"] for tokenized_dataset in tokenized_datasets])
+    token_type_ids = torch.cat([tokenized_dataset["token_type_ids"] for tokenized_dataset in tokenized_datasets])
+    attention_mask = torch.cat([tokenized_dataset["attention_mask"] for tokenized_dataset in tokenized_datasets])
+    return input_ids, token_type_ids, attention_mask
+
+
 
 class SCDatasetTokenized(torch.utils.data.Dataset):
     def __init__(
@@ -53,25 +72,10 @@ class SCDatasetTokenized(torch.utils.data.Dataset):
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
         if dataset.sentence2 is None:
-            tokenizer_res = tokenizer(
-                dataset.sentence,
-                max_length=64,
-                padding="max_length",
-                truncation=True,
-                return_tensors="pt",
-            )
+            self.input_ids, self.token_type_ids, self.attention_mask = batched_tokenization(tokenizer, dataset.sentence, 64)
         else:
-            tokenizer_res = tokenizer(
-                list(zip(dataset.sentence, dataset.sentence2)),
-                max_length=128,
-                padding="max_length",
-                truncation=True,
-                return_tensors="pt",
-            )
+            self.input_ids, self.token_type_ids, self.attention_mask = batched_tokenization(tokenizer, list(zip(dataset.sentence, dataset.sentence2)), 128)
 
-        self.input_ids = tokenizer_res["input_ids"]
-        self.token_type_ids = tokenizer_res["token_type_ids"]
-        self.attention_mask = tokenizer_res["attention_mask"]
         self.labels = None
         if dataset.labels is not None:
             self.labels = torch.tensor(

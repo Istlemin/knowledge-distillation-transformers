@@ -4,7 +4,7 @@ from pathlib import Path
 from tokenize import Token
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
-from kd import print_model
+from kd import KD_SequenceClassification, print_model
 import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
@@ -30,7 +30,7 @@ import logging
 from tqdm.auto import tqdm
 from utils import get_optimizer, get_scheduler
 from args import FinetuneArgs
-
+from transformers import AutoModelForSequenceClassification
 
 class Args(FinetuneArgs):
     modelpath: Path
@@ -89,6 +89,10 @@ def run_epoch(
     losses = []
     correct_predictions = 0
     total_predictions = 0
+
+    if isinstance(model.module,KD_SequenceClassification):
+        print(model.module.kd_losses["transformer_layer"].kd_attention.layer_map)
+
     for step, batch in enumerate(dataloader):
         input_ids = batch.input_ids.to(device)
         token_type_ids = batch.token_type_ids.to(device)
@@ -243,10 +247,10 @@ def main():
         args.gluepath, args.dataset, augmented=args.use_augmented_data
     )
 
-    if args.modelpath is None:
-        model = load_pretrained_bert_base()
-    else:
-        model = load_model_from_disk(args.modelpath)
+    try:
+        model = AutoModelForSequenceClassification.from_pretrained(args.modelpath,num_labels=len(datasets.train.possible_labels),ignore_mismatched_sizes=True)
+    except OSError:
+        model = torch.load(args.modelpath)
 
     model = make_sequence_classifier(model,len(datasets.train.possible_labels))
 

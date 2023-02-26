@@ -10,6 +10,8 @@ import torch
 from transformers.optimization import get_linear_schedule_with_warmup
 
 def distributed_setup(rank, world_size, port):
+    if port is None:
+        port = random.randint(10000,20000)
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 

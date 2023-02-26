@@ -8,7 +8,7 @@ class TrainArgs(Tap):
     num_epochs: int
     batch_size: int
     scheduler: Optional[str] = None
-    port: int = 12345
+    port: Optional[int] = None
     num_gpus: int = 1
 
 class FinetuneArgs(TrainArgs):

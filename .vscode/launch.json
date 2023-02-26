@@ -82,7 +82,7 @@
                 "--gluepath",
                 "../GLUE-baselines/glue_data/",
                 "--dataset",
-                "SST-2",
+                "QQP",
                 "--num_gpus",
                 "1",
                 "--teacher_model",

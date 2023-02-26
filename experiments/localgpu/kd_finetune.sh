@@ -5,10 +5,10 @@ num_gpus=1
 base_url="/local/scratch-3/fwe21/project/"
 seed=0
 gluepath=$base_url"GLUE-baselines/glue_data/"
-dataset="RTE"
+dataset="QQP"
 teacher_model_path=$base_url"checkpoints/finetune/bert_base/"$dataset"/bestmodel"
 student_model_path=$base_url"models/general_tinybert_corpus/model.pt"
-outputdir=$base_url"checkpoints/kd_finetune/RTE/tinybert/corpus_bs32/" 
+outputdir=$base_url"checkpoints/kd_finetune/QQP/tinybert/corpus_bs32/" 
 
 CUDA_VISIBLE_DEVICES=1 \
 intermediate_args="--gluepath $gluepath \

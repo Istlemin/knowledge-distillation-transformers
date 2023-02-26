@@ -23,6 +23,7 @@ from load_glue import (
 )
 from finetune import finetune
 from model import (
+    BertForSequenceClassificationWithLoss,
     get_bert_config,
     load_pretrained_bert_base,
     load_model_from_disk,
@@ -75,11 +76,12 @@ def main():
         "prediction_layer": KDPred(),
     }
     active_kd_losses = args.kd_losses
+    print("Active losses:", active_kd_losses)
 
     model = KD_SequenceClassification(
         teacher, student, kd_losses_dict, active_kd_losses
     )
-
+    #model = BertForSequenceClassificationWithLoss(student)
     torch.multiprocessing.spawn(
         finetune,
         args=(model, datasets, args),
