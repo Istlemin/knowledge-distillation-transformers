@@ -9,6 +9,7 @@ import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
 from torch.optim import Adam
+import torch.distributed as dist
 import time
 from pathlib import Path
 import argparse
@@ -35,32 +36,44 @@ from transformers import AutoModelForSequenceClassification
 class Args(FinetuneArgs):
     modelpath: Path
 
-def run_eval(model, dataloader:DataLoader,device: Device):
+def run_eval(model, dataloader:DataLoader,device: Device,num_gpus):
     model.eval()
     losses = []
     all_predictions = [] 
     all_labels = []
+    #print("evaling",device)
     for step, batch in enumerate(dataloader):
         input_ids = batch.input_ids.to(device)
         token_type_ids = batch.token_type_ids.to(device)
         attention_mask = batch.attention_mask.to(device)
         labels = batch.labels.to(device)
 
+        #print("evaling",device)
         loss, predictions = model(
             input_ids=input_ids,
             token_type_ids=token_type_ids,
             attention_mask=attention_mask,
             labels=labels,
         )
-        all_predictions.append(predictions)
-        all_labels.append(labels)
+        #print("evaling2",device)
+        all_predictions += (predictions.tolist())
+        all_labels += (labels.tolist())
         
         loss = torch.mean(loss)
-        losses.append(loss.detach())
-        
-    losses = torch.stack(losses)
-    all_predictions = torch.cat(all_predictions)
-    all_labels = torch.cat(all_labels)
+        losses.append(loss.detach().item())
+    
+    # all_proc_losses = [None for _ in range(num_gpus)]
+    # print("Reducing!")    
+    # torch.distributed.gather_object({"test":1}, all_proc_losses if dist.get_rank() == 0 else None, dst=0)
+    # print(all_proc_losses)
+    # all_proc_predictions = [None for _ in range(num_gpus)]
+    # torch.distributed.all_gather_object(all_proc_predictions, predictions)
+    # all_proc_labels = [None for _ in range(num_gpus)]
+    # torch.distributed.all_gather_object(all_proc_labels, labels)
+
+    losses = torch.tensor(losses,device=device).flatten()
+    all_predictions = torch.tensor(all_predictions,device=device).flatten()
+    all_labels = torch.tensor(all_labels,device=device).flatten()
 
     metrics = {}
     metrics["loss"] = torch.mean(losses).item()
@@ -78,10 +91,11 @@ def run_epoch(
     model,
     dataloader: DataLoader,
     device: Device,
+    num_gpus,
     optimizer: Optional[torch.optim.Optimizer] = None,
     scheduler: torch.optim.lr_scheduler.LambdaLR = None,
     eval_steps=None,
-    dev_dataloader:Optional[DataLoader]=None
+    dev_dataloader:Optional[DataLoader]=None,
 ):
     model.train()
 
@@ -106,15 +120,11 @@ def run_epoch(
             attention_mask=attention_mask,
             labels=labels,
         )
-        correct_predictions += torch.sum(predictions==labels)
+        correct_predictions += torch.sum(predictions==labels).item()
         total_predictions += len(batch.input_ids)
         loss = torch.mean(loss) 
         loss.backward()
-        #print_model(model.module.teacher,batch.input_ids,teacher_output.hidden_states,teacher_output.attentions,teacher_output.logits, grad=False)
-        #print_model(model.module.student,batch.input_ids,student_output.hidden_states,student_output.attentions,student_output.logits)
-        #print(student_output.logits.grad[:5].tolist())
-        #print(loss.item())
-        losses.append(loss.detach())
+        losses.append(loss.detach().item())
         optimizer.step()
         scheduler.step()
 
@@ -123,13 +133,16 @@ def run_epoch(
         progress_description += f", lr:{scheduler.get_last_lr()[0]:.2e}"
         progress_bar.set_description(progress_description, refresh=True)
         
-        if eval_steps is not None and (step + 1) % eval_steps == 0 and True:
+        if eval_steps is not None and (step + 1) % eval_steps == 0:
             logging.info(f"Step {step+1}:")
-            run_eval(model, dev_dataloader, device=device)
+            run_eval(model, dev_dataloader, device=device, num_gpus=num_gpus)
             model.train()
+        
+        if step%50==0:
+            torch.cuda.empty_cache()
 
-    loss = torch.mean(torch.stack(losses))
-    return loss, correct_predictions / total_predictions
+    loss = np.mean(losses)
+    return torch.tensor(loss,device=device), torch.tensor(correct_predictions / total_predictions, device=device)
 
 
 def finetune(
@@ -158,6 +171,7 @@ def finetune(
     setup_logging(args.outputdir)
     logging.info(args.get_reproducibility_info())
 
+
     def get_dataloader(dataset):
         sampler = torch.utils.data.distributed.DistributedSampler(
             dataset,
@@ -172,7 +186,10 @@ def finetune(
         )
 
     train_dataloader = get_dataloader(tokenized_datasets.train)
-    dev_dataloader = get_dataloader(tokenized_datasets.dev)
+    dev_dataloader = DataLoader(
+        tokenized_datasets.dev,
+        batch_size=args.batch_size // args.num_gpus,
+    )
 
     total_train_steps = (
         len(tokenized_datasets.train) * args.num_epochs // args.batch_size
@@ -196,7 +213,8 @@ def finetune(
             optimizer=optimizer,
             scheduler=scheduler,
             device=device,
-            eval_steps=args.eval_steps if gpu_idx==0 else None,
+            num_gpus=args.num_gpus,
+            eval_steps=args.eval_steps,# if gpu_idx==0 else None,
             dev_dataloader=dev_dataloader,
         )
         torch.distributed.all_reduce(train_loss, op=torch.distributed.ReduceOp.SUM)
@@ -207,7 +225,7 @@ def finetune(
         logging.info(f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}")
 
         if gpu_idx == 0:
-            metrics = run_eval(model, dev_dataloader, device=device)
+            metrics = run_eval(model, dev_dataloader, device=device,num_gpus=args.num_gpus)
             checkpoint = {
                 "epochs": epoch + 1,
                 "train_loss": train_loss.item(),

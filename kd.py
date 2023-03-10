@@ -57,7 +57,7 @@ class KDAttention(KDLoss):
                     * (teacher_cfg.num_hidden_layers)
                     // (student_cfg.num_hidden_layers)
                     - 1
-                ] = 1
+                ] = 10000000
             self.layer_map = nn.Parameter(self.layer_map)
             self.layer_map.requires_grad_(False)
         elif layer_map == "beginning":
@@ -239,51 +239,50 @@ def print_model(
     model: BertForSequenceClassification, input_ids, reps, attns, logits, grad=True
 ):
     print("Model weights:")
-    print(model.bert.embeddings.word_embeddings.weight.flatten()[:5].tolist())
+    print(model.bert.embeddings.word_embeddings.weight.view(torch.long).sum())
     print(
-        model.bert.encoder.layer[0].attention.self.query.weight.flatten()[:5].tolist()
+        model.bert.encoder.layer[0].attention.self.query.weight.view(torch.long).sum()
     )
-    print(model.bert.encoder.layer[0].intermediate.dense.weight.flatten()[:5].tolist())
+    print(model.bert.encoder.layer[0].intermediate.dense.weight.view(torch.long).sum())
     print(
-        model.bert.encoder.layer[-1].attention.self.query.weight.flatten()[:5].tolist()
+        model.bert.encoder.layer[-1].attention.self.query.weight.view(torch.long).sum()
     )
-    print(model.bert.encoder.layer[-1].intermediate.dense.weight.flatten()[:5].tolist())
-    print(model.bert.pooler.dense.weight.flatten()[:5].tolist())
-    print(model.classifier.weight.flatten()[:5].tolist())
+    print(model.bert.encoder.layer[-1].intermediate.dense.weight.view(torch.long).sum())
+    print(model.bert.pooler.dense.weight.view(torch.long).sum())
+    print(model.classifier.weight.view(torch.long).sum())
 
     if grad:
         print("Model grads:")
-        print(model.bert.embeddings.word_embeddings.weight.grad.flatten()[:5].tolist())
+        print(model.bert.embeddings.word_embeddings.weight.grad.view(torch.long).sum())
         print(
             model.bert.encoder.layer[0]
-            .attention.self.query.weight.grad.flatten()[:5]
-            .tolist()
+            .attention.self.query.weight.grad.view(torch.long).sum()
         )
         print(
             model.bert.encoder.layer[0]
-            .intermediate.dense.weight.grad.flatten()[:5]
-            .tolist()
+            .intermediate.dense.weight.grad.view(torch.long).sum()
         )
         print(
             model.bert.encoder.layer[-1]
-            .attention.self.query.weight.grad.flatten()[:5]
-            .tolist()
+            .attention.self.query.weight.grad.view(torch.long).sum()
         )
         print(
             model.bert.encoder.layer[-1]
-            .intermediate.dense.weight.grad.flatten()[:5]
-            .tolist()
+            .intermediate.dense.weight.grad.view(torch.long).sum()
         )
-        print(model.bert.pooler.dense.weight.grad.flatten()[:5].tolist())
-        print(model.classifier.weight.grad.flatten()[:5].tolist())
+        print(model.bert.pooler.dense.weight.grad.view(torch.long).sum())
+        print(model.classifier.weight.grad.view(torch.long).sum())
 
     print("activations:")
-    print(input_ids[0].flatten()[:5].tolist())
-    print(reps[0].flatten()[:5].tolist())
-    print(reps[-1].flatten()[:5].tolist())
-    print(attns[0].flatten()[:5].tolist())
-    print(attns[-1].flatten()[:5].tolist())
-    print(logits.flatten()[:5].tolist())
+    print(input_ids.shape)
+    print(input_ids[0].view(torch.long).sum())
+    print(reps[0].view(torch.long).sum())
+    print(reps[1].view(torch.long).sum())
+    print(reps[-1].view(torch.long).sum())
+    print(attns[0].view(torch.long).sum())
+    print(attns[1].view(torch.long).sum())
+    print(attns[-1].view(torch.long).sum())
+    print(logits.view(torch.long).sum())
 
 
 class KD_SequenceClassification(ModelWithLoss):
@@ -303,15 +302,18 @@ class KD_SequenceClassification(ModelWithLoss):
         self.student = student
 
     def forward(self, epoch=-1, **batch):
-        # self.teacher.eval()
-        # set_random_seed(0)
-        teacher_output = self.teacher(
-            return_dict=True, output_hidden_states=True, output_attentions=True, **batch
-        )
-        # set_random_seed(0)
+        self.teacher.eval()
+        
+        #set_random_seed(0)
         student_output = self.student(
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )
+        #set_random_seed(0)
+        teacher_output = self.teacher(
+            return_dict=True, output_hidden_states=True, output_attentions=True, **batch
+        )
+
+        #print_model(self.student,batch["input_ids"],student_output.hidden_states,student_output.attentions,student_output.logits,grad=False)
 
         predictions = torch.argmax(student_output.logits, dim=1)
 
@@ -326,7 +328,9 @@ class KD_SequenceClassification(ModelWithLoss):
                 # hack to make sure all losses are part of loss computation,
                 # needed for DistributedDataParallell
                 loss += 0 * curr_loss
+            #print(curr_loss.item())
 
+        #print(loss.item())
         return loss, predictions  # , student_output, teacher_output
 
     def save(self, path):

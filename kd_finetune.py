@@ -46,6 +46,8 @@ class Args(FinetuneArgs, KDArgs):
 def main():
     print("KD Training")
     args = Args().parse_args()
+    if args.port is None:
+        args.port = random.randint(0,100000)
 
     set_random_seed(args.seed)
 

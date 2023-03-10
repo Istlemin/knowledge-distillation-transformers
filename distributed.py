@@ -7,7 +7,7 @@ def distributed_setup(rank, world_size, port=12347):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 
-    dist.init_process_group("ncll", rank=rank, world_size=world_size)
+    dist.init_process_group("nasdas", rank=rank, world_size=world_size)
 
 
 def distributed_cleanup():
