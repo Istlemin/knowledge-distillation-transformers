@@ -111,42 +111,16 @@ def prepare_bert_for_kd(model: BertPreTrainedModel):
         )
     return model
 
-def get_other_model(model):
-    from modeling.utils_quant import QuantizeLinear
-    from modeling import modeling_quant
-    from modeling.configuration import BertConfig as QuantBertConfig
-    config = QuantBertConfig.from_pretrained("../models/bert_base_SST-2_93.58%/huggingface/", 
-                                                quantize_act=True,
-                                                weight_bits = 2,
-                                                input_bits = 8,
-                                                clip_val = 2.5)
-    statedict = model.state_dict()
-    other_model = modeling_quant.BertForSequenceClassification.from_pretrained("../models/bert_base_SST-2_93.58%/huggingface/", config = config, num_labels=2)
-    other_model.load_state_dict(statedict,strict=False)
-    return other_model
-
 def prepare_bert_for_quantization(
     model: BertPreTrainedModel,
     weight_quanter=TwnQuantizer(clamp_val=2.5),
     act_quanter=MinMaxQuantizer(bits=8, clamp_val=2.5),
 ):
-    other_model = get_other_model(model)
-
     config = model.config
-    statedict = model.state_dict()
-    # model.bert.embeddings.word_embeddings = other_model.bert.embeddings.word_embeddings
-    # for layer,other_layer in zip(model.bert.encoder.layer, other_model.bert.encoder.layer):
-    #     layer.attention.self = other_layer.attention.self
-    #     layer.attention.output.dense = other_layer.attention.output.dense
-    #     layer.intermediate.dense = other_layer.intermediate.dense
-    #     layer.output.dense = other_layer.output.dense
-    # model.bert.pooler.dense = other_model.bert.pooler.dense
-
-    # return model
+    
     model.bert.embeddings.word_embeddings = QuantizedEmbedding(
         model.bert.embeddings.word_embeddings, weight_quanter
     )
-
     for layer in model.bert.encoder.layer:
         layer.attention.self = CustomBertSelfAttention(
             layer.attention.self,
@@ -154,18 +128,6 @@ def prepare_bert_for_quantization(
             weight_quanter=weight_quanter,
             act_quanter=act_quanter,
         )
-        # layer.attention.output.dense = utils_quant.QuantizeLinear(
-        #     layer.attention.output.dense.in_features,
-        #     layer.attention.output.dense.out_features,
-        # )
-        # layer.intermediate.dense = utils_quant.QuantizeLinear(
-        #     layer.intermediate.dense.in_features,
-        #     layer.intermediate.dense.out_features,
-        # )
-        # layer.output.dense = utils_quant.QuantizeLinear(
-        #     layer.output.dense.in_features,
-        #     layer.output.dense.out_features,
-        # )
         layer.attention.output.dense = QuantizedLinear(
             layer.attention.output.dense,
             weight_quanter=weight_quanter,
@@ -182,12 +144,6 @@ def prepare_bert_for_quantization(
     model.bert.pooler.dense = QuantizedLinear(
         model.bert.pooler.dense, weight_quanter=weight_quanter, act_quanter=act_quanter
     )
-    # model.bert.pooler.dense = utils_quant.QuantizeLinear(
-    #     model.bert.pooler.dense.in_features,
-    #     model.bert.pooler.dense.out_features,
-    # )
-
-    #model.load_state_dict(statedict,strict=False)
     return model
 
 

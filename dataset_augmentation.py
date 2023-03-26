@@ -35,7 +35,7 @@ class GloveEmbeddings:
         self.word_to_idx = {word: i for i, word in enumerate(self.words)}
 
 
-def tokenize_to_words(sentence, tokenizer):
+def tokenized_to_words(sentence, tokenizer):
     tokens = tokenizer.tokenize(sentence)
     words = []
     for token in tokens:
@@ -132,7 +132,7 @@ def augment_sentence(
     augment_prob=0.4,
     batch_size=8,
 ):
-    words = tokenize_to_words(sentence, tokenizer)
+    words = tokenized_to_words(sentence, tokenizer)
 
     words = words[:64]
 

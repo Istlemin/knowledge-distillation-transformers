@@ -1,10 +1,14 @@
 from collections import defaultdict
+from functools import partial
 from multiprocessing import Process, Queue
 import multiprocessing
-from pathos.multiprocessing import Pool
+import pickle
+
+# from pathos.multiprocessing import Pool
 from datasets.arrow_dataset import Dataset
+from matplotlib.lines import segment_hits
 from transformers import PreTrainedTokenizer
-from typing import List, Dict
+from typing import List, Dict, NamedTuple
 import torch
 import random
 import tqdm
@@ -12,103 +16,143 @@ import glob
 from pathlib import Path
 from datasets import concatenate_datasets
 from transformers import AutoTokenizer
+from transformers.models.bert.tokenization_bert import BertTokenizer
 from load_glue import load_batched_dataset
 import argparse
+import re
 
 
-class MLMDatasetGenerator:
+class PretrainItem(NamedTuple):
+    tokens: torch.tensor
+    masked_tokens: torch.tensor
+    is_masked: torch.tensor
+    segment_ids: torch.tensor
+    is_random_next: torch.tensor
+
+
+class PretrainingDatasetGenerator:
     mask_token: int
     tokenizer: PreTrainedTokenizer
     instances: List[Dict]
     is_wordpiece_suffix: torch.Tensor
 
-    def __init__(self, tokenizer: PreTrainedTokenizer):
+    def __init__(self, tokenizer: PreTrainedTokenizer, documents: List[List[int]]):
+        self.documents = documents  # [doc[::-1] for doc in documents]
         self.tokenizer = tokenizer
         assert self.tokenizer.mask_token_id is not None
         self.mask_token = self.tokenizer.mask_token_id
         self.is_wordpiece_suffix = torch.zeros(len(self.tokenizer), dtype=torch.bool)
         for token_string, idx in self.tokenizer.get_vocab().items():
             self.is_wordpiece_suffix[idx] = token_string[:2] == "##"
-
-    def tokens_to_mlm_instance(
-        self,
-        instance_tokens: torch.tensor,
-        seq_len: int,
-        masked_ml_prob=0.15,
-        replacement_probabilities=[0.8, 0.1, 0.1],
-    ):
-        in_len = len(instance_tokens)
-        tokens = torch.ones(seq_len, dtype=torch.int32) * self.tokenizer.pad_token_id
-        tokens[0] = self.tokenizer.cls_token_id
-        tokens[1 : in_len + 1] = instance_tokens
-        tokens[in_len + 1] = self.tokenizer.sep_token_id
-
-        is_masked = torch.zeros(seq_len, dtype=torch.bool)
-        is_masked[1 : in_len + 1] = torch.bernoulli(torch.ones(in_len) * 0.1)
-
-        mask_replacement = torch.ones(seq_len, dtype=torch.int32) * self.mask_token
-        self_replacement = (
-            torch.ones(seq_len, dtype=torch.int32) * self.tokenizer.pad_token_id
-        )
-        self_replacement[1 : in_len + 1] = instance_tokens
-        random_replacemet = torch.randint(0, len(self.tokenizer), (seq_len,))
-
-        replacement_choices = torch.multinomial(
-            torch.tensor(replacement_probabilities), seq_len, replacement=True
-        )
-        replacement = torch.stack(
-            [mask_replacement, self_replacement, random_replacemet]
-        )[replacement_choices, torch.arange(seq_len)].int()
-
-        masked_tokens = tokens.clone()
-        masked_tokens[is_masked] = replacement[is_masked]
-
-        # words: List[List[int]] = []
-        # for token in instance_tokens:
-        #     if len(words) > 0 and self.is_wordpiece_suffix[token]:
-        #         words[-1].append(token)
-        #     else:
-        #         words.append([token])
-
-        # masked_tokens = []
-        # is_masked = []
-        # for word in words:
-        #     if random.uniform(0, 1) < masked_ml_prob:  # Mask this word
-        #         mask_replacement = [self.mask_token] * len(word)
-        #         self_replacement = word
-        #         random_replacement = [
-        #             random.randint(0, len(self.tokenizer)) for _ in range(len(word))
-        #         ]
-        #         (replacement,) = random.choices(
-        #             [mask_replacement, self_replacement, random_replacement],
-        #             weights=replacement_probabilities,
-        #         )
-        #         masked_tokens += replacement
-        #         is_masked += [True] * len(word)
-        #     else:
-        #         masked_tokens += word
-        #         is_masked += [False] * len(word)
-
-        # num_padding = in_len- seq_len
-        # instance_tokens += [self.tokenizer.pad_token_id] * num_padding
-        # masked_tokens += [self.tokenizer.pad_token_id] * num_padding
-        # is_masked += [False] * num_padding
-
-        return {
-            "tokens": tokens,
-            "masked_tokens": masked_tokens,
-            "is_masked": is_masked,
-        }
-
-    def doc_tokens_to_instances(self, doc_tokens: torch.tensor, seq_len: int):
-        doc_tokens_per_seq = seq_len - 2
-        return [
-            self.tokens_to_mlm_instance(doc_tokens[i : i + doc_tokens_per_seq], seq_len)
-            for i in range(0, len(doc_tokens), doc_tokens_per_seq)
+        self.vocab = list(self.tokenizer.get_vocab().values())
+        self.special_tokens = [
+            self.tokenizer.cls_token_id,
+            self.tokenizer.sep_token_id,
+            self.tokenizer.pad_token_id,
         ]
 
-    #def docs_tokens_to_instances()
+    def apply_masking(
+        self,
+        instance_tokens: List[int],
+        seq_len: int,
+        masked_ml_prob=0.15,
+    ):
+        masked_tokens = []
+        is_masked = []
 
+        for token in instance_tokens:
+            if random.random() < masked_ml_prob and token not in self.special_tokens:
+                r = random.random()
+                if r < 0.8:
+                    masked_tokens.append(self.tokenizer.mask_token_id)
+                elif r < 0.9:
+                    masked_tokens.append(token)
+                else:
+                    masked_tokens.append(random.choice(self.vocab))
+                is_masked.append(True)
+            else:
+                masked_tokens.append(token)
+                is_masked.append(False)
+        return masked_tokens, is_masked
+
+    def truncate_seq_pair(self,tokens_a, tokens_b, max_num_tokens):
+        """Truncates a pair of sequences to a maximum sequence length. Lifted from Google's BERT repo."""
+        while True:
+            total_length = len(tokens_a) + len(tokens_b)
+            if total_length <= max_num_tokens:
+                break
+
+            trunc_tokens = tokens_a if len(tokens_a) > len(tokens_b) else tokens_b
+            assert len(trunc_tokens) >= 1
+
+            # We want to sometimes truncate from the front and sometimes from the
+            # back to add more randomness and avoid biases.
+            if random.random() < 0.5:
+                del trunc_tokens[0]
+            else:
+                trunc_tokens.pop()
+        return tokens_a, tokens_b
+
+    def get_instances(self, document, seq_len):
+        instances = []
+        document = document[::-1]
+        max_num_tokens = seq_len - 3
+
+        target_seq_len = max_num_tokens
+        if random.random() < 0.1:
+            target_seq_len = random.randint(2, max_num_tokens)
+
+        while len(document):
+            sampled_sentences = []
+            while len(sum(sampled_sentences, [])) < target_seq_len and len(document):
+                sampled_sentences.append(document.pop())
+
+            num_a_sentences = random.randint(1, len(sampled_sentences))
+            part_a = sum(sampled_sentences[:num_a_sentences], [])
+            sampled_sentences = sampled_sentences[num_a_sentences:]
+
+            part_b = []
+            if len(document) == 0 or random.random() < 0.5:
+                is_random_next = True
+                random_doc = self.documents[random.randint(0, len(self.documents) - 1)]
+                for i in range(random.randint(0, len(random_doc) - 1), len(random_doc)):
+                    part_b.extend(random_doc[i])
+                    if len(part_a) + len(part_b) > target_seq_len:
+                        break
+            else:
+                is_random_next = False
+                if len(sampled_sentences)==0:
+                    part_b = document.pop()
+                else:
+                    for i in range(len(sampled_sentences)):
+                        part_b.extend(sampled_sentences[i])
+                        if len(part_a) + len(part_b) > target_seq_len:
+                            sampled_sentences = sampled_sentences[i:]
+                            break
+            document += sampled_sentences[::-1]
+            
+            part_a,part_b = self.truncate_seq_pair(part_a,part_b, max_num_tokens)
+
+            tokens = (
+                [self.tokenizer.cls_token_id]
+                + part_a
+                + [self.tokenizer.sep_token_id]
+                + part_b
+                + [self.tokenizer.sep_token_id]
+            )
+            if len(tokens)<seq_len:
+                tokens += [self.tokenizer.pad_token_id] * (seq_len - len(tokens))
+            segment_ids = [0]*(len(part_a)+2) + [1]*(seq_len-2-len(part_a))
+            masked_tokens, is_masked = self.apply_masking(tokens, seq_len)
+
+            instances.append(PretrainItem(
+                tokens=tokens,
+                masked_tokens=masked_tokens,
+                is_masked=is_masked,
+                is_random_next=is_random_next,
+                segment_ids=segment_ids
+            ))
+        return instances
 
 def transpose_dict(list_of_dicts: List[Dict]):
     res = defaultdict(list)
@@ -161,20 +205,50 @@ def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
         print("join!")
 
 
+def split_document_into_sentences(document):
+    return [
+        sentence + "." for sentence in re.split(r"\.[\t\s\n]+", document) if sentence
+    ]
+
+
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--in_dataset", dest="in_dataset_path", type=Path, required=True
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument(
+    #     "--in_dataset", dest="in_dataset_path", type=Path, required=True
+    # )
+    # parser.add_argument(
+    #     "--out_dataset", dest="out_dataset_path", type=Path, required=True
+    # )
+    # args = parser.parse_args()
+
+    # dataset = load_batched_dataset(args.in_dataset_path)
+
+    # batched_prepare_datasets(dataset, Path(args.out_dataset_path))
+
+    tokenizer = BertTokenizer.from_pretrained(
+        "../models/bert_base_SST-2_93.58%/huggingface", do_lower_case=True
     )
-    parser.add_argument(
-        "--out_dataset", dest="out_dataset_path", type=Path, required=True
-    )
-    args = parser.parse_args()
 
-    dataset = load_batched_dataset(args.in_dataset_path)
+    print("Reading file...")
+    documents = Path("../data.txt").read_text().split("\n\n")
 
-    batched_prepare_datasets(dataset, Path(args.out_dataset_path))
+    print("Tokenizing...")
 
+    # tokenized_documents = [[tokenizer.encode(sentence)[1:-1] for sentence in split_document_into_sentences(doc)] for doc in tqdm.tqdm(documents)]
+
+    # pickle.dump(tokenized_documents, open("../data_tokenized","wb"))
+    tokenized_documents = pickle.load(open("../data_tokenized", "rb"))
+
+    dataset_generator = PretrainingDatasetGenerator(tokenizer, tokenized_documents)
+    
+    print("Go!")
+    instances = []
+    for doc in tokenized_documents:
+        instances.extend(dataset_generator.get_instances(doc, 128))
+    print(len(instances)/256)
+
+    # for instance in instances:
+    #     if instance.is_random_next == False:
 
 if __name__ == "__main__":
     main()
