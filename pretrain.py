@@ -250,7 +250,7 @@ def main():
     else:
         model = load_model_from_disk(args.model_path)
 
-    model = AutoModelForPreTraining.from_pretrained("prajjwal1/bert-mini")
+    #model = AutoModelForPreTraining.from_pretrained("prajjwal1/bert-mini")
 
     #pretrain(0,BertForPretrainingWithLoss(model), args)
     torch.multiprocessing.spawn(
