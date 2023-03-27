@@ -92,7 +92,7 @@ def run_epoch(
             optimizer.zero_grad()
 
         batch_losses, batch_word_correct_predictions, batch_next_correct_predictions = model(
-            input_ids=masked_tokens, is_masked=tokens==0,segment_ids=segment_ids, output_ids=tokens,is_next_sentence=~is_random_next
+            input_ids=masked_tokens, is_masked=is_masked, segment_ids=segment_ids, output_ids=tokens, is_next_sentence=~is_random_next
         )
         loss = batch_losses.mean()
         for j in range(len(is_masked)):
@@ -100,21 +100,24 @@ def run_epoch(
         correct_next_predictions += batch_next_correct_predictions.tolist()
         
         loss.backward()
-        losses.append(batch_losses.detach().cpu())
+        losses.append(batch_losses.detach().cpu().tolist())
 
         if optimizer is not None:
             optimizer.step()
         if scheduler is not None:
             scheduler.step()
 
-        desc = f"Loss: " + "\t".join([f"{x:.4f}" for x  in torch.mean(torch.stack(losses),dim=0).tolist()]) + "\t"
+        desc = f"Loss: " + "\t".join([f"{x:.4f}" for x  in torch.mean(torch.tensor(losses,device=device),dim=0).tolist()]) + "\t"
         desc += f"Word Acc: {np.mean(correct_word_predictions)*100:.2f}%,\t" + \
             f"Next Acc: {np.mean(correct_next_predictions)*100:.2f}%,\t" + \
             f"device:{device},\tlr:{scheduler.get_last_lr()[0]:.2e}"
         progress_bar.set_description(desc)
         progress_bar.update(1)
 
-    loss = torch.mean(torch.stack(losses),dim=0)
+        if i%200==0:
+            torch.cuda.empty_cache()
+
+    loss = torch.mean(torch.tensor(losses,device=device),dim=0)
     return loss, np.mean(correct_word_predictions), np.mean(correct_next_predictions)
 
 
@@ -247,7 +250,7 @@ def main():
     else:
         model = load_model_from_disk(args.model_path)
 
-    # model = AutoModelForPretraining.from_pretrained("bert-base-uncased", num_labels=5)
+    model = AutoModelForPreTraining.from_pretrained("prajjwal1/bert-mini")
 
     #pretrain(0,BertForPretrainingWithLoss(model), args)
     torch.multiprocessing.spawn(

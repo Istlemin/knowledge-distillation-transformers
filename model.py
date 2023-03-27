@@ -32,10 +32,13 @@ def masked_lm_loss(model_outputs, input_ids, is_masked, output_ids):
     )
     return loss, correct_predictions
 
-def pretraining_loss(model_outputs, output_ids, is_next_sentence):
+def pretraining_loss(model_outputs, output_ids, is_next_sentence, is_masked):
     word_correct_predictions = model_outputs.prediction_logits.argmax(dim=-1)==output_ids
     next_correct_predictions = model_outputs.seq_relationship_logits.argmax(dim=-1)==is_next_sentence
-    return model_outputs.loss, word_correct_predictions, next_correct_predictions
+    loss_fct = torch.nn.CrossEntropyLoss()
+    masked_lm_loss = loss_fct(model_outputs.prediction_logits.view(-1, model_outputs.prediction_logits.shape[-1])[is_masked.flatten()], output_ids.view(-1)[is_masked.flatten()])
+    next_sentence_loss = loss_fct(model_outputs.seq_relationship_logits.view(-1, 2), is_next_sentence.view(-1))
+    return (masked_lm_loss+next_sentence_loss).reshape((1,)), word_correct_predictions, next_correct_predictions
 
 class BertForPreTrainingWithLoss(ModelWithLoss):
     def __init__(self, model: BertForPreTraining):
@@ -47,13 +50,13 @@ class BertForPreTrainingWithLoss(ModelWithLoss):
     def forward(self, input_ids, is_masked, segment_ids, output_ids, is_next_sentence):
         outputs = self.model(
             input_ids,
-            attention_mask=~is_masked,
+            attention_mask=input_ids!=0,
             token_type_ids=segment_ids,
             return_dict=True,
             labels=output_ids,
             next_sentence_label=is_next_sentence.long()
         )
-        return pretraining_loss(outputs,output_ids, is_next_sentence)
+        return pretraining_loss(outputs,output_ids, is_next_sentence, is_masked)
 
     def save(self,path):
         torch.save(self.model,path)
