@@ -37,7 +37,7 @@ def pretraining_loss(model_outputs, output_ids, is_next_sentence, is_masked):
     next_correct_predictions = model_outputs.seq_relationship_logits.argmax(dim=-1)==is_next_sentence
     loss_fct = torch.nn.CrossEntropyLoss()
     masked_lm_loss = loss_fct(model_outputs.prediction_logits.view(-1, model_outputs.prediction_logits.shape[-1])[is_masked.flatten()], output_ids.view(-1)[is_masked.flatten()])
-    next_sentence_loss = loss_fct(model_outputs.seq_relationship_logits.view(-1, 2), is_next_sentence.view(-1))
+    next_sentence_loss = loss_fct(model_outputs.seq_relationship_logits.view(-1, 2), is_next_sentence.view(-1).long())
     return (masked_lm_loss+next_sentence_loss).reshape((1,)), word_correct_predictions, next_correct_predictions
 
 class BertForPreTrainingWithLoss(ModelWithLoss):
