@@ -33,6 +33,7 @@ from utils import get_optimizer, get_scheduler
 from args import FinetuneArgs
 from transformers import AutoModelForSequenceClassification
 
+
 class Args(FinetuneArgs):
     modelpath: Path
 
@@ -41,7 +42,6 @@ def run_eval(model, dataloader:DataLoader,device: Device,num_gpus):
     losses = []
     all_predictions = [] 
     all_labels = []
-    #print("evaling",device)
     for step, batch in enumerate(dataloader):
         input_ids = batch.input_ids.to(device)
         token_type_ids = batch.token_type_ids.to(device)
