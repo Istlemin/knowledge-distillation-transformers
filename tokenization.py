@@ -1,4 +1,6 @@
 import enum
+import multiprocessing
+from pathlib import Path
 import random
 from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer
@@ -40,42 +42,40 @@ def split_document_into_sentences(document):
         sentence + "." for sentence in re.split(r"\.[\t\s\n]+", document) if sentence
     ]
 
+def tokenize_document_batch(documents,outdir):
+    print("Running process",outdir)
+    tokenized_documents = [
+        [
+            tokenizer.encode(sentence)[1:-1]
+            for sentence in split_document_into_sentences(doc)
+        ]
+        for doc in tqdm(documents)
+    ]
+    print("saving", outdir)
+    pickle.dump(tokenized_documents, open(outdir,"wb"))
 
-def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
+def batched_tokenize(document_dataset, outdir, batch_size=100000,num_workers=8):
     shuffle_perm = list(range(len(document_dataset)))
     random.shuffle(shuffle_perm)
     print("A")
     print("B")
-    for ind,i in enumerate(tqdm(range(0, len(document_dataset), batch_size))):
-        print(i)
-        documents = document_dataset.select(shuffle_perm[i : i + batch_size])["text"]
-        print("C")
-        tokenized_documents = [
-            [
-                tokenizer.encode(sentence)[1:-1]
-                for sentence in split_document_into_sentences(doc)
-            ]
-            for doc in tqdm(documents)
-        ]
-        pickle.dump(tokenized_documents, open(f"{outdir}/{ind}","wb"))
-
-    # processes = [
-    #     Process(target=prepare_dataset, args=(batch, outdir / str(i)))
-    #     for i, batch in enumerate(batches)
-    # ]
-    # for p in processes:
-    #     p.start()
-    # for p in processes:
-    #     p.join()
-    #     print("join!")
+    with multiprocessing.Pool(num_workers) as p:
+        processes = []
+        for ind,i in enumerate(tqdm(range(0, len(document_dataset), batch_size))):
+            print(i)
+            documents = document_dataset.select(shuffle_perm[i : i + batch_size])["text"]
+            print("C")
+            processes.append(p.apply_async(tokenize_document_batch,(documents,outdir/str(ind))))
+        
+        for proc in processes:
+            proc.get()
 
 
 if __name__ == "__main__":
     dataset = load_dataset("wikipedia", "20220301.en")
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-
     batch_size = len(dataset["train"]) // 64
     print("Tokenizing...")
 
-    batched_prepare_datasets(dataset["train"], "../wikipedia_tokenized/", batch_size)
+    batched_tokenize(dataset["train"], Path("../wikipedia_tokenized/"), batch_size)
