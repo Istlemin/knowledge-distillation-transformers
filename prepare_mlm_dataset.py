@@ -205,10 +205,6 @@ def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
         print("join!")
 
 
-def split_document_into_sentences(document):
-    return [
-        sentence + "." for sentence in re.split(r"\.[\t\s\n]+", document) if sentence
-    ]
 
 
 def main():

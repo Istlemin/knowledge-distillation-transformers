@@ -1,7 +1,16 @@
+import enum
+import random
 from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer
 from datasets import Dataset
 
+from datasets import load_dataset
+
+from transformers import AutoTokenizer
+import os
+from tqdm import tqdm
+import re
+import pickle
 
 def tokenize(dataset) -> Dataset:
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
@@ -12,7 +21,9 @@ def tokenize(dataset) -> Dataset:
         )
 
     print("Tokenizing...")
-    tokenized_dataset = dataset.filter(lambda sample: sample["sentence"] is not None).map(tokenize_function)
+    tokenized_dataset = dataset.filter(
+        lambda sample: sample["sentence"] is not None
+    ).map(tokenize_function)
     print("Num tokenized entries:", len(tokenized_dataset))
     tokenized_dataset = tokenized_dataset.remove_columns(["sentence"])
     tokenized_dataset["train"] = tokenized_dataset["train"].rename_column(
@@ -24,31 +35,48 @@ def tokenize(dataset) -> Dataset:
     return tokenized_dataset
 
 
+def split_document_into_sentences(document):
+    return [
+        sentence + "." for sentence in re.split(r"\.[\t\s\n]+", document) if sentence
+    ]
+
+
+def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
+    shuffle_perm = list(range(len(document_dataset)))
+    random.shuffle(shuffle_perm)
+    batches = [
+        document_dataset.select(shuffle_perm[i : i + batch_size])
+        for i in tqdm(range(0, len(document_dataset), batch_size))
+    ]
+
+    for i,document_batch in enumerate(batches):
+        documents = document_batch["text"]
+        tokenized_documents = [
+            [
+                tokenizer.encode(sentence)[1:-1]
+                for sentence in split_document_into_sentences(doc)
+            ]
+            for doc in tqdm(documents)
+        ]
+        pickle.dump(tokenized_documents, open(f"{i}","wb"))
+
+    # processes = [
+    #     Process(target=prepare_dataset, args=(batch, outdir / str(i)))
+    #     for i, batch in enumerate(batches)
+    # ]
+    # for p in processes:
+    #     p.start()
+    # for p in processes:
+    #     p.join()
+    #     print("join!")
+
+
 if __name__ == "__main__":
-    from datasets import load_dataset
-
     dataset = load_dataset("wikipedia", "20220301.en")
-
-    from transformers import AutoTokenizer
-    import os
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
-    def tokenize_function(sample):
-        return tokenizer(sample["text"])
-
+    batch_size = len(dataset["train"]) // 64
     print("Tokenizing...")
-    for i in range(0, len(dataset["train"]), 1000000):
-        print(i)
-        tokenized_dataset = (
-            dataset["train"]
-            .select(range(i, min(len(dataset["train"], i + 1000000))))
-            .map(tokenize_function, num_proc=16)
-        )
-        tokenized_dataset.save_to_disk(f"../wikipedia_dataset/tokenized{i}")
-        os.system(
-            "rm /home/fwe21/.cache/huggingface/datasets/wikipedia/20220301.en/2.0.0/aa542ed919df55cc5d3347f42dd4521d05ca68751f50dbc32bae2a7f1e167559/tmp*"
-        )
-        os.system(
-            "rm /home/fwe21/.cache/huggingface/datasets/wikipedia/20220301.en/2.0.0/aa542ed919df55cc5d3347f42dd4521d05ca68751f50dbc32bae2a7f1e167559/cache*"
-        )
+
+    batched_prepare_datasets(dataset["train"], "../wikipedia_tokenized/", batch_size)
