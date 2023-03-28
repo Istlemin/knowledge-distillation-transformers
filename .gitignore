@@ -2,3 +2,4 @@
 log*
 kd_transformers.egg-info
 dataaugmentlogs/*
+experiments/**/*
