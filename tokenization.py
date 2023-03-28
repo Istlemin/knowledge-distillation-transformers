@@ -81,4 +81,4 @@ if __name__ == "__main__":
     batch_size = len(dataset["train"]) // 64
     print("Tokenizing...")
 
-    batched_prepare_datasets(dataset["train"][:1000], "../wikipedia_tokenized/", 100)
+    batched_prepare_datasets(dataset["train"].select(list(range(1000))), "../wikipedia_tokenized/", 100)
