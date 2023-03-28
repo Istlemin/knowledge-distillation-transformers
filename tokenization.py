@@ -45,14 +45,11 @@ def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
     shuffle_perm = list(range(len(document_dataset)))
     random.shuffle(shuffle_perm)
     print("A")
-    batches = [
-        document_dataset.select(shuffle_perm[i : i + batch_size])
-        for i in tqdm(range(0, len(document_dataset), batch_size))
-    ]
     print("B")
-    for i,document_batch in tqdm(enumerate(batches)):
+    for ind,i in enumerate(tqdm(range(0, len(document_dataset), batch_size))):
         print(i)
-        documents = document_batch["text"]
+        documents = document_dataset.select(shuffle_perm[i : i + batch_size])["text"]
+        print("C")
         tokenized_documents = [
             [
                 tokenizer.encode(sentence)[1:-1]
@@ -60,7 +57,7 @@ def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
             ]
             for doc in tqdm(documents)
         ]
-        pickle.dump(tokenized_documents, open(f"{i}","wb"))
+        pickle.dump(tokenized_documents, open(f"{outdir}/{ind}","wb"))
 
     # processes = [
     #     Process(target=prepare_dataset, args=(batch, outdir / str(i)))
@@ -81,4 +78,4 @@ if __name__ == "__main__":
     batch_size = len(dataset["train"]) // 64
     print("Tokenizing...")
 
-    batched_prepare_datasets(dataset["train"].select(list(range(1000))), "../wikipedia_tokenized/", 100)
+    batched_prepare_datasets(dataset["train"], "../wikipedia_tokenized/", batch_size)
