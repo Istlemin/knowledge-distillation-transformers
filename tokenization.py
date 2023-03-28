@@ -49,7 +49,8 @@ def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
         for i in tqdm(range(0, len(document_dataset), batch_size))
     ]
 
-    for i,document_batch in enumerate(batches):
+    for i,document_batch in tqdm(enumerate(batches)):
+        print(i)
         documents = document_batch["text"]
         tokenized_documents = [
             [
