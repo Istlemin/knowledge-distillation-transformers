@@ -44,11 +44,12 @@ def split_document_into_sentences(document):
 def batched_prepare_datasets(document_dataset, outdir, batch_size=100000):
     shuffle_perm = list(range(len(document_dataset)))
     random.shuffle(shuffle_perm)
+    print("A")
     batches = [
         document_dataset.select(shuffle_perm[i : i + batch_size])
         for i in tqdm(range(0, len(document_dataset), batch_size))
     ]
-
+    print("B")
     for i,document_batch in tqdm(enumerate(batches)):
         print(i)
         documents = document_batch["text"]
@@ -80,4 +81,4 @@ if __name__ == "__main__":
     batch_size = len(dataset["train"]) // 64
     print("Tokenizing...")
 
-    batched_prepare_datasets(dataset["train"], "../wikipedia_tokenized/", batch_size)
+    batched_prepare_datasets(dataset["train"][:1000], "../wikipedia_tokenized/", 100)
