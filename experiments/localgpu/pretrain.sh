@@ -7,18 +7,17 @@
 # source activate torch1.9
 
 #base_url="/jmain02/home/J2AD015/axf03/fxe31-axf03/project/"
-base_url="/local/scratch-3/fwe21/project/"
+base_url="/local-zfs/fwe21/project/"
 seed=0
-dataset_path=$base_url"wikipedia_mlm128_2/"
+dataset_path=$base_url"TinyBERT/corpus_masked/"
 model_path=$base_url"models/general_small12h_mlm.pt" 
 checkpoint_path=$base_url"checkpoints/." 
 
 
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 
-python3 kd_pretrain.py \
+python3 pretrain.py \
     --dataset $dataset_path \
-    --model_path $model_path \
     --seed $seed \
     --lr 1e-4 \
     --batch_size 24 \
