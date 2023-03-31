@@ -220,7 +220,7 @@ def generate_document_batch(args):
 
 def prepare_pretraining_dataset(dataset_path,num_workers=8):
     tokenized_documents = pickle.load(open(dataset_path, "rb"))
-
+    print("Loaded tokenized")
     batch_size = len(tokenized_documents) // num_workers + 1
     document_batches = [
         tokenized_documents[i : i + batch_size]

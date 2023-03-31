@@ -31,7 +31,9 @@ def batched_tokenize(document_dataset, outdir, batch_size=100000,num_workers=8):
     random.shuffle(shuffle_perm)
 
     for ind,i in enumerate(tqdm(range(0, len(document_dataset), batch_size))):
+        print("Getting document batch")
         documents = document_dataset.select(shuffle_perm[i : i + batch_size])["text"]
+        print("Tokenizing batch")
         tokenize_document_batch(documents,outdir/str(ind))
 
 
