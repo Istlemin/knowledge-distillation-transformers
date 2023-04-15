@@ -1,16 +1,12 @@
-import logging
-from typing import Dict, List, NamedTuple, Union
+from typing import Dict, List, Union
 
 import torch
 from torch import nn
 import torch.nn.functional as F
 
-from model import ModelWithLoss, PretrainingModel, SequenceClassificationModel, masked_lm_loss, pretraining_loss
+from model import PretrainingModel, SequenceClassificationModel, pretraining_loss
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
 from transformers import BertForMaskedLM, BertForSequenceClassification, BertConfig
-from modeling.bert import prepare_bert_for_kd
-
-from utils import set_random_seed
 
 
 class KDLoss(nn.Module):
@@ -80,15 +76,13 @@ class LinearLayerMap(LayerMap):
                 ] = 10000000
         elif initialisation == "binned":
             for i in range(teacher_layers):
-                self.layer_map[
-                    i * (student_layers) // (teacher_layers), i
-                ] = 10000000
+                self.layer_map[i * (student_layers) // (teacher_layers), i] = 10000000
         elif initialisation is not None:
             raise Exception("No such layer map implemented")
         self.layer_map = nn.Parameter(self.layer_map)
 
     def forward(self, teacher_data, layer_index):
-        lmap = F.softmax(self.layer_map[layer_index],dim=0).reshape(
+        lmap = F.softmax(self.layer_map[layer_index], dim=0).reshape(
             (-1,) + tuple(1 for _ in range(len(teacher_data[0].shape)))
         )
         return torch.sum(teacher_data * lmap.reshape((-1, 1)), dim=0)
@@ -117,6 +111,8 @@ class KDHiddenStates(KDLoss):
     ):
         super().__init__()
 
+        self.layer_map = layer_map
+
         student_layers = student_cfg.num_hidden_layers + 1
         if student_cfg.hidden_size == teacher_cfg.hidden_size:
             self.student_to_teacher = [None] * student_layers
@@ -140,10 +136,12 @@ class KDHiddenStates(KDLoss):
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         loss = 0
-        for student_to_teacher, student_hidden, teacher_hidden_layer in zip(
-            self.student_to_teacher, student_output.hidden_states, self.layer_map
+        for i, (student_to_teacher, student_hidden) in enumerate(
+            zip(self.student_to_teacher, student_output.hidden_states)
         ):
-            teacher_hidden = teacher_output.hidden_states[teacher_hidden_layer]
+            teacher_hidden = self.layer_map(
+                torch.stack(teacher_output.hidden_states), i
+            )
             if student_to_teacher is None:
                 loss += F.mse_loss(student_hidden, teacher_hidden)
             else:
@@ -229,6 +227,7 @@ class KD_PreTraining(PretrainingModel):
     def save(self, path):
         torch.save(self.student, path)
 
+
 class KD_SequenceClassification(SequenceClassificationModel):
     def __init__(
         self,
@@ -277,40 +276,3 @@ class KD_SequenceClassification(SequenceClassificationModel):
 
     def save(self, path):
         torch.save(self.student, path)
-
-def tensor_equal_eps(a:torch.Tensor,b:torch.Tensor,eps:float = 1e-9):
-    return ((a-b)<eps).all
-
-def test_linear_layer_map():
-    student_layers = 3
-    teacher_layers = 6
-
-    layer_map = LinearLayerMap(3,6,initialisation=None)
-    assert tensor_equal_eps(layer_map(torch.eye(6).float(), 0), torch.tensor([1/6,1/6,1/6,1/6,1/6,1/6]).float())
-    
-    layer_map = LinearLayerMap(3,6,initialisation="uniform")
-    assert tensor_equal_eps(layer_map(torch.eye(6).float(), 0), torch.tensor([0,1,0,0,0,0]).float())
-    assert tensor_equal_eps(layer_map(torch.eye(6).float(), 2), torch.tensor([0,0,0,0,0,1]).float())
-    
-    layer_map = LinearLayerMap(3,6,initialisation="binned")
-    assert tensor_equal_eps(layer_map(torch.eye(6).float(), 0), torch.tensor([1/2,1/2,0,0,0,0]).float())
-    assert tensor_equal_eps(layer_map(torch.eye(6).float(), 2), torch.tensor([0,0,0,0,1/2,1/2]).float())
-
-def test_kd_hidden_state():
-    from model import get_bert_config
-    teacher_cfg = get_bert_config("base")
-    student_cfg = get_bert_config("TinyBERT")
-
-    KDHiddenStates(
-        teacher_cfg,
-        student_cfg,
-        layer_map=ConstantLayerMap(
-            student_cfg.num_hidden_layers,
-            teacher_cfg.num_hidden_layers,
-            map_type="uniform_start_0",
-        ),
-    )
-
-    teacher_output = 
-if __name__=="__main__":
-    test_linear_layer_map()

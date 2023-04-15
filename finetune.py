@@ -4,7 +4,7 @@ from pathlib import Path
 from tokenize import Token
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
-from kd import KD_SequenceClassification, print_model
+from kd import KD_SequenceClassification
 import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
@@ -24,7 +24,6 @@ from model import (
     get_bert_config,
     load_pretrained_bert_base,
     load_model_from_disk,
-    ModelWithLoss,
     make_sequence_classifier,
 )
 import logging
@@ -147,7 +146,7 @@ def run_epoch(
 
 def finetune(
     gpu_idx: int,
-    model: ModelWithLoss,
+    model,
     tokenized_datasets: DatasetDict,
     args: Args,
 ):  
@@ -224,8 +223,9 @@ def finetune(
 
         logging.info(f"Train loss: {train_loss}\t\tTrain accuracy: {train_accuracy}")
 
+        metrics = run_eval(model, dev_dataloader, device=device,num_gpus=args.num_gpus)
+        
         if gpu_idx == 0:
-            metrics = run_eval(model, dev_dataloader, device=device,num_gpus=args.num_gpus)
             checkpoint = {
                 "epochs": epoch + 1,
                 "train_loss": train_loss.item(),
