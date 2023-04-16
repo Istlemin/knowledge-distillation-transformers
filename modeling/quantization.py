@@ -2,17 +2,25 @@ import torch
 import math
 from torch import nn
 
+def clip_and_save(ctx, w, clip_val):
+    ctx.save_for_backward(w<-clip_val | w>clip_val)
+    return torch.clamp(w,-clip_val,clip_val)
+
+def gradient_apply_clipping(ctx, grad_output):
+    clip_mask = ctx.saved_tensors
+    return grad_output * clip_mask
+
 class TwnQuantizerFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, w : torch.Tensor, dim, clamp_val):
+    def forward(ctx, w : torch.Tensor, dim, clip_val):
+        w = clip_and_save(ctx, w, clip_val)
+
         if dim is None:
             dim = tuple(range(len(w.shape)))
         if type(dim) is int:
             dim = (dim,)
-        ctx.save_for_backward(w, torch.tensor(clamp_val,device=w.device))
         n = math.prod((w.shape[d]) for d in dim)
 
-        w = torch.clamp(w,-clamp_val,clamp_val)
 
         thres = torch.norm(w, p=1, dim=dim) / n * 0.7
         for d in dim:
@@ -30,34 +38,30 @@ class TwnQuantizerFunction(torch.autograd.Function):
         """
         Approximate the gradient wrt to the full-precision inputs
         using the gradient wrt to the quantized inputs, 
-        zeroing out gradient for clamped values.
+        zeroing out gradient for clipped values.
         """
-        w, clamp_val = ctx.saved_tensors
-        grad_output *= ((-clamp_val < w) & (w < clamp_val))
-
         # Need to return one gradient for each argument,
         # but we only want one for [w] 
-        return grad_output, None, None
+        return gradient_apply_clipping(ctx, grad_output), None, None
 
 class TwnQuantizer(nn.Module):
-    def __init__(self, clamp_val=2.5):
+    def __init__(self, clip_val=2.5):
         super().__init__()
-        self.clamp_val = clamp_val
+        self.clip_val = clip_val
 
     def forward(self,w, dim=None):
-        return TwnQuantizerFunction.apply(w,dim,self.clamp_val)
+        return TwnQuantizerFunction.apply(w,dim,self.clip_val)
 
 
 class MinMaxQuantizerFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, w : torch.Tensor, dim, bits, clamp_val):
+    def forward(ctx, w : torch.Tensor, dim, bits, clip_val):
+        w = clip_and_save(ctx, w, clip_val)
+
         if dim is None:
             dim = tuple(range(len(w.shape)))
         if type(dim) is int:
             dim = (dim,)
-        ctx.save_for_backward(w, torch.tensor(clamp_val,device=w.device))
-
-        w = torch.clamp(w,-clamp_val,clamp_val)
         
         mn = mx = w
         for d in dim:
@@ -78,23 +82,20 @@ class MinMaxQuantizerFunction(torch.autograd.Function):
         """
         Approximate the gradient wrt to the full-precision inputs
         using the gradient wrt to the quantized inputs, 
-        zeroing out gradient for clamped values.
+        zeroing out gradient for clipped values.
         """
-        w,clamp_val = ctx.saved_tensors
-        grad_output *= ((-clamp_val < w) & (w < clamp_val))
-
         # Need to return one gradient for each argument,
         # but we only want one for [w] 
-        return grad_output, None, None, None
+        return gradient_apply_clipping(ctx, grad_output), None, None, None
 
 class MinMaxQuantizer(nn.Module):
-    def __init__(self, bits=8, clamp_val=2.5):
+    def __init__(self, bits=8, clip_val=2.5):
         super().__init__()
-        self.clamp_val = clamp_val
+        self.clip_val = clip_val
         self.bits=bits
 
     def forward(self,w, dim=None):
-        return MinMaxQuantizerFunction.apply(w,dim,self.bits,self.clamp_val)
+        return MinMaxQuantizerFunction.apply(w,dim,self.bits,self.clip_val)
 
 
 class QuantizedLinear(nn.Module):

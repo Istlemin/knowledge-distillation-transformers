@@ -35,7 +35,7 @@ from tqdm.auto import tqdm
 
 from typing import NamedTuple
 
-from kd import KD_MLM, KDPred, KDTransformerLayers, KD_SequenceClassification
+from kd import KD_MLM, KDPred, KDTransformerLayers, KDSequenceClassification
 from utils import set_random_seed
 
 class Args(FinetuneArgs, KDArgs):
@@ -77,11 +77,10 @@ def main():
         "transformer_layer": KDTransformerLayers(teacher.config, student.config),
         "prediction_layer": KDPred(),
     }
-    active_kd_losses = args.kd_losses
-    print("Active losses:", active_kd_losses)
+    print("Active losses:", args.kd_losses)
 
-    model = KD_SequenceClassification(
-        teacher, student, kd_losses_dict, active_kd_losses
+    model = KDSequenceClassification(
+        teacher, student, [kd_losses_dict[kd_loss_name] for kd_loss_name in args.kd_losses]
     )
     #model = BertForSequenceClassificationWithLoss(student)
     torch.multiprocessing.spawn(

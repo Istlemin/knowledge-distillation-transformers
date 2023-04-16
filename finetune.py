@@ -4,7 +4,7 @@ from pathlib import Path
 from tokenize import Token
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
-from kd import KD_SequenceClassification
+from kd import KDSequenceClassification
 import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
@@ -103,7 +103,7 @@ def run_epoch(
     correct_predictions = 0
     total_predictions = 0
 
-    if isinstance(model.module,KD_SequenceClassification):
+    if isinstance(model.module,KDSequenceClassification):
         print(model.module.kd_losses["transformer_layer"].kd_attention.layer_map)
 
     for step, batch in enumerate(dataloader):

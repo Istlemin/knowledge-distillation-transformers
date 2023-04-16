@@ -10,7 +10,7 @@ from model import (
     load_model_from_disk,
 )
 
-from kd import KD_PreTraining, KDTransformerLayers
+from kd import KDPreTraining, KDTransformerLayers
 from modeling.bert import prepare_bert_for_kd
 from pretrain import pretrain
 from utils import set_random_seed
@@ -50,7 +50,7 @@ def main():
     teacher = prepare_bert_for_kd(teacher)
     student = prepare_bert_for_kd(student)
 
-    model = KD_PreTraining(
+    model = KDPreTraining(
         teacher,
         student,
         [KDTransformerLayers(teacher.config, student.config)],

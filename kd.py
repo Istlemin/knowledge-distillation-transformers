@@ -9,13 +9,17 @@ from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutp
 from transformers import BertForMaskedLM, BertForSequenceClassification, BertConfig
 
 
-class KDLoss(nn.Module):
-    pass
-
 
 ModelOutput = Union[MaskedLMOutput, SequenceClassifierOutput]
 Model = Union[BertForMaskedLM, BertForSequenceClassification]
 
+class KDLoss(nn.Module):
+    def forward(self, teacher_output: ModelOutput, student_output: ModelOutput) -> torch.tensor:
+        pass
+
+class LayerMap(nn.Module):
+    def forward(self, teacher_data : torch.tensor, layer_index:int) -> torch.tensor:
+        pass
 
 def soft_cross_entropy(predicts, targets):
     # print("soft cross:")
@@ -36,15 +40,13 @@ class KDPred(KDLoss):
         return soft_cross_entropy(student_output.logits, teacher_output.logits)
 
 
-class LayerMap(nn.Module):
-    pass
-
 
 class ConstantLayerMap(LayerMap):
     def __init__(self, student_layers, teacher_layers, map_type="uniform"):
         super().__init__()
         if map_type == "uniform_start_0":
-            # Evenly spread out layer map
+            # Evenly spread out layer map,
+            # with student layer 0 mapped to teacher layer 0
             self.layer_map = [
                 i * (teacher_layers) // (student_layers)
                 for i in range(student_layers + 1)
@@ -56,6 +58,9 @@ class ConstantLayerMap(LayerMap):
                 for i in range(student_layers)
             ]
         elif map_type == "beginning":
+            # Map student the first layers of teacher
+            self.layer_map = list(range(student_layers + 1))
+        elif map_type == "end":
             # Map student the first layers of teacher
             self.layer_map = list(range(student_layers + 1))
         else:
@@ -89,7 +94,7 @@ class LinearLayerMap(LayerMap):
 
 
 class KDAttention(KDLoss):
-    def __init__(self, student_cfg: BertConfig, teacher_cfg: BertConfig, layer_map):
+    def __init__(self, student_cfg: BertConfig, teacher_cfg: BertConfig, layer_map:LayerMap):
         super().__init__()
         self.layer_map = layer_map
 
@@ -175,11 +180,10 @@ class KDTransformerLayers(KDLoss):
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         attention_loss = self.kd_attention(teacher_output, student_output)
         hidden_states_loss = self.kd_hidden_states(teacher_output, student_output)
-        # print(f"att_loss: {attention_loss}, rep_loss: {hidden_states_loss}")
         return attention_loss + hidden_states_loss
 
 
-class KD_PreTraining(PretrainingModel):
+class KDPreTraining(PretrainingModel):
     def __init__(self, teacher: Model, student: Model, kd_losses: List[KDLoss]):
         super().__init__()
 
@@ -191,7 +195,7 @@ class KD_PreTraining(PretrainingModel):
     def forward(self, input_ids, is_masked, segment_ids, output_ids, is_next_sentence):
         teacher_output = self.teacher.forward(
             input_ids,
-            attention_mask=~is_masked,
+            attention_mask=input_ids != 0,
             token_type_ids=segment_ids,
             return_dict=True,
             output_hidden_states=True,
@@ -199,7 +203,7 @@ class KD_PreTraining(PretrainingModel):
         )
         student_output = self.student.forward(
             input_ids,
-            attention_mask=~is_masked,
+            attention_mask=input_ids != 0,
             token_type_ids=segment_ids,
             return_dict=True,
             output_hidden_states=True,
@@ -212,12 +216,12 @@ class KD_PreTraining(PretrainingModel):
             pretrain_loss,
             word_correct_predictions,
             next_correct_prediction,
-        ) = pretraining_loss(student_output, output_ids, is_next_sentence)
+        ) = pretraining_loss(student_output, output_ids, is_next_sentence, is_masked)
 
-        loss = torch.zeros((1,), device=input_ids.device)
+        loss = 0
         for kd_loss in self.kd_losses:
             loss += kd_loss(teacher_output, student_output)
-            # sprint(loss)
+
         return (
             torch.stack([loss[0], pretrain_loss]),
             word_correct_predictions,
@@ -228,23 +232,16 @@ class KD_PreTraining(PretrainingModel):
         torch.save(self.student, path)
 
 
-class KD_SequenceClassification(SequenceClassificationModel):
-    def __init__(
-        self,
-        teacher: Model,
-        student: Model,
-        kd_losses_dict: Dict[str, KDLoss],
-        active_kd_losses: List[str],
-    ):
+class KDSequenceClassification(SequenceClassificationModel):
+    def __init__(self, teacher: Model, student: Model, kd_losses: List[KDLoss]):
         super().__init__()
 
-        self.kd_losses = nn.ModuleDict(kd_losses_dict)
-        self.active_kd_losses = active_kd_losses
+        self.kd_losses = nn.ModuleList(kd_losses)
         self.teacher = teacher
         self.teacher.requires_grad_(False)
         self.student = student
 
-    def forward(self, epoch=-1, **batch):
+    def forward(self, **batch):
         self.teacher.eval()
 
         student_output = self.student(
@@ -254,25 +251,14 @@ class KD_SequenceClassification(SequenceClassificationModel):
             return_dict=True, output_hidden_states=True, output_attentions=True, **batch
         )
 
-        # print_model(self.student,batch["input_ids"],student_output.hidden_states,student_output.attentions,student_output.logits,grad=False)
-
         predictions = torch.argmax(student_output.logits, dim=1)
 
-        loss = torch.zeros((1,), device=batch["labels"].device)
+        loss = 0
 
-        for kd_loss_name, kd_loss in self.kd_losses.items():
-            curr_loss = kd_loss(teacher_output, student_output)
+        for kd_loss in self.kd_losses.items():
+            loss += kd_loss(teacher_output, student_output)
 
-            if kd_loss_name in self.active_kd_losses:
-                loss += curr_loss
-            else:
-                # hack to make sure all losses are part of loss computation,
-                # needed for DistributedDataParallell
-                loss += 0 * curr_loss
-            # print(curr_loss.item())
-
-        # print(loss.item())
-        return loss, predictions  # , student_output, teacher_output
+        return loss, predictions
 
     def save(self, path):
         torch.save(self.student, path)
