@@ -113,8 +113,8 @@ def prepare_bert_for_kd(model: BertPreTrainedModel):
 
 def prepare_bert_for_quantization(
     model: BertPreTrainedModel,
-    weight_quanter=TwnQuantizer(clamp_val=2.5),
-    act_quanter=MinMaxQuantizer(bits=8, clamp_val=2.5),
+    weight_quanter=TwnQuantizer(clip_val=2.5),
+    act_quanter=MinMaxQuantizer(bits=8, clip_val=2.5),
 ):
     config = model.config
     
@@ -160,8 +160,8 @@ def test_quantized_bert():
     model2 = copy.deepcopy(model1)
     model2 = prepare_bert_for_quantization(
         model2,
-        weight_quanter=MinMaxQuantizer(bits=32, clamp_val=10000),
-        act_quanter=MinMaxQuantizer(bits=32, clamp_val=10000),
+        weight_quanter=MinMaxQuantizer(bits=32, clip_val=10000),
+        act_quanter=MinMaxQuantizer(bits=32, clip_val=10000),
     )
 
     inp = torch.randint(200, 1000, (10, 30))

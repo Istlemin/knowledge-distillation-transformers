@@ -35,7 +35,7 @@ from tqdm.auto import tqdm
 
 from typing import NamedTuple
 
-from kd import KD_MLM, KDPred, KDTransformerLayers, KDSequenceClassification
+from kd import KDPred, KDTransformerLayers, KDSequenceClassification
 from utils import set_random_seed
 
 class Args(FinetuneArgs, KDArgs):
