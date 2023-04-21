@@ -3,11 +3,22 @@ from collections import defaultdict
 from pathlib import Path, PosixPath
 import re
 import json
-
+import pandas as pd
+import numpy as np
 
 from kd_finetune import Args as KDFinetuneArgs
 from finetune import Args as FinetuneArgs
 
+DATASETS = ["QNLI","RTE","SST-2","MRPC","MNLI","QQP","CoLA"]
+DEFAULT_METRIC = {
+    "QNLI": "accuracy",
+    "RTE": "accuracy",
+    "SST-2": "accuracy",
+    "MNLI": "accuracy",
+    "MRPC": "F1_score",
+    "QQP": "F1_score",
+    "CoLA": "matthews",
+}
 def parse_command(command):
     if "python kd_finetune.py" in command:
         args = KDFinetuneArgs().parse_args(command.split(" ")[2:])
@@ -56,6 +67,35 @@ def read_log(file):
                 current_run = TrainingRunResult(command)
                 all_runs[str(current_run.args)] = current_run
     return list(all_runs.values())
+
+def get_metric(epoch_res,metric):
+        if "dev_metrics" in epoch_res:
+            return epoch_res["dev_metrics"][metric]
+        else:
+            return epoch_res["dev_accuracy"]
+
+def get_metric(epoch_res,metric):
+        if "dev_metrics" in epoch_res:
+            return epoch_res["dev_metrics"][metric]
+        else:
+            return epoch_res["dev_accuracy"]
+
+def to_dataframe(logfile, metric="accuracy"):
+    training_runs = read_log(logfile)
+
+    rows = []
+    for run in training_runs:
+        epoch_metrics = [get_metric(epoch_res, metric) for epoch_res in run.epoch_evals]
+        
+        rows.append({
+            "lr":run.args["lr"],
+            "batch_size":run.args["batch_size"],
+            "best_metric":max(epoch_metrics),
+            "last3_mean":np.mean(epoch_metrics[-3:]),
+            "last3_std":np.std(epoch_metrics[-3:]),
+        })
+    
+    return pd.DataFrame(rows)
 
 if __name__=="__main__":
     read_log("../checkpoints/kd_finetune/tinybert/SST-2/tinybert/long_pretrain/prediction/log")
