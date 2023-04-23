@@ -1,21 +1,10 @@
-from collections import namedtuple
-from glob import glob
-import logging
 from pathlib import Path
 from typing import Optional
-from datasets.dataset_dict import DatasetDict
-from datasets.arrow_dataset import Dataset
 import torch
-from torch.cuda import Device
-from torch.utils.data import DataLoader
-from torch.optim import Adam
-import time
 from pathlib import Path
-import argparse
 import torch
 import random
-import numpy as np
-from transformers import AutoModelForSequenceClassification, BertForMaskedLM
+from transformers import AutoModelForSequenceClassification
 from args import FinetuneArgs, KDArgs
 
 from load_glue import (
@@ -23,17 +12,11 @@ from load_glue import (
 )
 from finetune import finetune
 from model import (
-    BertForSequenceClassificationWithLoss,
     get_bert_config,
-    load_pretrained_bert_base,
     load_model_from_disk,
-    load_untrained_bert_base,
 )
 from modeling.bert import prepare_bert_for_kd, prepare_bert_for_quantization
 
-from tqdm.auto import tqdm
-
-from typing import NamedTuple
 
 from kd import KDPred, KDTransformerLayers, KDSequenceClassification
 from utils import set_random_seed
@@ -43,9 +26,8 @@ class Args(FinetuneArgs, KDArgs):
     student_model_path:Optional[Path]=None
     student_model_config:Optional[Path]=None
 
-def main():
+def main(args):
     print("KD Training")
-    args = Args().parse_args()
     if args.port is None:
         args.port = random.randint(0,100000)
 
@@ -82,7 +64,7 @@ def main():
     model = KDSequenceClassification(
         teacher, student, [kd_losses_dict[kd_loss_name] for kd_loss_name in args.kd_losses]
     )
-    #model = BertForSequenceClassificationWithLoss(student)
+    
     torch.multiprocessing.spawn(
         finetune,
         args=(model, datasets, args),
@@ -92,4 +74,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(Args().parse_args())

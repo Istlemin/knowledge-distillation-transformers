@@ -4,7 +4,8 @@ from tap import Tap
 
 class TrainArgs(Tap):
     seed: int = 0
-    lr: float
+    lr: float = 2e-5
+    weight_decay : float = 0.01
     num_epochs: int
     batch_size: int
     scheduler: Optional[str] = None

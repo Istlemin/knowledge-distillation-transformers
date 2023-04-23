@@ -17,6 +17,8 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 import random
 import numpy as np
+from ray import tune
+
 from load_glue import load_tokenized_glue_dataset
 from utils import F1_score, distributed_cleanup, distributed_setup, matthews_correlation, set_random_seed, setup_logging
 from model import (
@@ -31,10 +33,6 @@ from tqdm.auto import tqdm
 from utils import get_optimizer, get_scheduler
 from args import FinetuneArgs
 from transformers import AutoModelForSequenceClassification
-
-
-class Args(FinetuneArgs):
-    modelpath: Path
 
 def run_eval(model, dataloader:DataLoader,device: Device,num_gpus):
     model.eval()
@@ -143,6 +141,8 @@ def run_epoch(
     loss = np.mean(losses)
     return torch.tensor(loss,device=device), torch.tensor(correct_predictions / total_predictions, device=device)
 
+class Args(FinetuneArgs):
+    modelpath: Path
 
 def finetune(
     gpu_idx: int,
@@ -150,6 +150,7 @@ def finetune(
     tokenized_datasets: DatasetDict,
     args: Args,
 ):  
+    print(tune.is_session_enabled())
     metric = args.metric
     if metric is None:
         metric = "accuracy"
@@ -168,7 +169,10 @@ def finetune(
         device = torch.device("cpu")
 
     setup_logging(args.outputdir)
-    logging.info(args.get_reproducibility_info())
+    if tune.is_session_enabled():
+        logging.info(str(args))
+    else:
+        logging.info(args.get_reproducibility_info())
 
 
     def get_dataloader(dataset):
@@ -194,7 +198,7 @@ def finetune(
         len(tokenized_datasets.train) * args.num_epochs // args.batch_size
     )
 
-    optimizer = get_optimizer(model, args.lr)
+    optimizer = get_optimizer(model, args.lr, weight_decay=args.weight_decay)
     scheduler = get_scheduler(
         optimizer, total_train_steps, schedule=args.scheduler, warmup_proportion=0.1
     )
@@ -253,12 +257,13 @@ def finetune(
                 model.module.save(args.outputdir / "bestmodel")
             model.module.save(args.outputdir / "lastmodel")
 
+            if tune.is_session_enabled():
+                tune.report(loss=metrics["loss"], accuracy=metrics["accuracy"], score=metrics[metric])
+
     distributed_cleanup()
 
-
-def main():
-    args = Args().parse_args()
-
+def main(args):
+    print(tune.is_session_enabled())
     set_random_seed(args.seed)
 
     datasets = load_tokenized_glue_dataset(
@@ -281,4 +286,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(Args().parse_args())
