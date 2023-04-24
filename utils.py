@@ -6,6 +6,7 @@ import torch.distributed as dist
 import random
 import numpy 
 import torch
+from datetime import datetime
 
 from transformers.optimization import get_linear_schedule_with_warmup
 
@@ -26,7 +27,7 @@ def setup_logging(path: Optional[Path] = None):
     handlers = [logging.StreamHandler()]
     if path is not None:
         path.mkdir(exist_ok=True, parents=True)
-        path = path / "log"
+        path = path / f"log"#datetime.now().strftime("log_%d-%m-%Y_%H:%M:%S")
         #path.unlink(missing_ok=True)
         handlers.append(logging.FileHandler(path))
 

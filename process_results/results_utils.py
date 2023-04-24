@@ -5,6 +5,7 @@ import re
 import json
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 from kd_finetune import Args as KDFinetuneArgs
 from finetune import Args as FinetuneArgs
@@ -96,6 +97,19 @@ def to_dataframe(logfile, metric="accuracy"):
         })
     
     return pd.DataFrame(rows)
+
+def make_label(args,label_args):
+    label = []
+    for argname in label_args:
+        label.append(f"{argname}={args[argname]}")
+    return ",".join(label)
+
+def make_plot(results : TrainingRunResult, label_args=["lr","batch_size"], metric="accuracy",):
+    num_epochs = len(results.epoch_evals)
+    metrics = []
+    for epoch_res in results.epoch_evals:
+        metrics.append(get_metric(epoch_res, metric))
+    plt.plot(range(1,num_epochs+1), metrics,label=make_label(results.args,label_args))
 
 if __name__=="__main__":
     read_log("../checkpoints/kd_finetune/tinybert/SST-2/tinybert/long_pretrain/prediction/log")
