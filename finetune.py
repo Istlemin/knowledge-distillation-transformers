@@ -17,7 +17,6 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 import random
 import numpy as np
-from ray import tune
 
 from load_glue import load_tokenized_glue_dataset
 from utils import F1_score, distributed_cleanup, distributed_setup, matthews_correlation, set_random_seed, setup_logging
@@ -149,8 +148,7 @@ def finetune(
     model,
     tokenized_datasets: DatasetDict,
     args: Args,
-):  
-    print(tune.is_session_enabled())
+):
     metric = args.metric
     if metric is None:
         metric = "accuracy"
@@ -168,11 +166,9 @@ def finetune(
     else:
         device = torch.device("cpu")
 
-    setup_logging(args.outputdir)
-    if tune.is_session_enabled():
-        logging.info(str(args))
-    else:
-        logging.info(args.get_reproducibility_info())
+    setup_logging(args.outputdir, logfile_name=args.logfile)
+
+    logging.info(args.get_reproducibility_info())
 
 
     def get_dataloader(dataset):
@@ -204,8 +200,6 @@ def finetune(
     )
 
     args.outputdir.mkdir(parents=True, exist_ok=True)
-    
-    #run_eval(model, dev_dataloader, device=device)
 
     for epoch in range(0, args.num_epochs):
         logging.info(f"EPOCH {epoch}:")
@@ -246,7 +240,11 @@ def finetune(
             best_score = 1e18 if metric=="loss" else 0
             if (args.outputdir / "best.json").exists():
                 best_checkpoint = json.loads((args.outputdir / "best.json").read_text())
-                best_score = best_checkpoint["dev_metrics"][metric]
+                if "dev_metrics" in best_checkpoint:
+                    best_score = best_checkpoint["dev_metrics"][metric]
+                else:
+                    best_score = best_checkpoint["dev_accuracy"]
+                    metric = "accuracy"
 
             is_better = metrics[metric] > best_score
             if metric=="loss":
@@ -257,13 +255,9 @@ def finetune(
                 model.module.save(args.outputdir / "bestmodel")
             model.module.save(args.outputdir / "lastmodel")
 
-            if tune.is_session_enabled():
-                tune.report(loss=metrics["loss"], accuracy=metrics["accuracy"], score=metrics[metric])
-
     distributed_cleanup()
 
 def main(args):
-    print(tune.is_session_enabled())
     set_random_seed(args.seed)
 
     datasets = load_tokenized_glue_dataset(
@@ -276,6 +270,11 @@ def main(args):
         model = torch.load(args.modelpath)
 
     model = make_sequence_classifier(model,len(datasets.train.possible_labels))
+
+    if args.use_best_hp:
+        best_json = json.loads((args.outputdir / "best.json").read_text())
+        args.lr = best_json["lr"]
+        args.batch_size = best_json["batch_size"]
 
     torch.multiprocessing.spawn(
         finetune,

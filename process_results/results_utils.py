@@ -111,5 +111,16 @@ def make_plot(results : TrainingRunResult, label_args=["lr","batch_size"], metri
         metrics.append(get_metric(epoch_res, metric))
     plt.plot(range(1,num_epochs+1), metrics,label=make_label(results.args,label_args))
 
+def make_plots(logfile, metric="accuracy"):
+    training_runs = read_log(logfile)
+    done_runs = set()
+    for run in training_runs:
+        if str(run.args) in done_runs:
+            continue
+        make_plot(run, metric=metric)
+        done_runs.add(str(run.args))
+    plt.legend()
+    plt.show()
+
 if __name__=="__main__":
     read_log("../checkpoints/kd_finetune/tinybert/SST-2/tinybert/long_pretrain/prediction/log")

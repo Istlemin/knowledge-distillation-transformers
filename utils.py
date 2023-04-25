@@ -23,11 +23,11 @@ def distributed_cleanup():
     dist.destroy_process_group()
 
 
-def setup_logging(path: Optional[Path] = None):
+def setup_logging(path: Optional[Path] = None, logfile_name : str = "log"):
     handlers = [logging.StreamHandler()]
     if path is not None:
         path.mkdir(exist_ok=True, parents=True)
-        path = path / f"log"#datetime.now().strftime("log_%d-%m-%Y_%H:%M:%S")
+        path = path / logfile_name
         #path.unlink(missing_ok=True)
         handlers.append(logging.FileHandler(path))
 
