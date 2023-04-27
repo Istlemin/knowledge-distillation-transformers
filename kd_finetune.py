@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Optional
 import torch
@@ -64,6 +65,11 @@ def main(args):
     model = KDSequenceClassification(
         teacher, student, [kd_losses_dict[kd_loss_name] for kd_loss_name in args.kd_losses]
     )
+
+    if args.use_best_hp:
+        best_json = json.loads((args.outputdir / "best.json").read_text())
+        args.lr = best_json["lr"]
+        args.batch_size = best_json["batch_size"]
     
     torch.multiprocessing.spawn(
         finetune,

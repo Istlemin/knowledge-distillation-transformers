@@ -94,7 +94,7 @@ class LinearLayerMap(LayerMap):
 
 
 class KDAttention(KDLoss):
-    def __init__(self, student_cfg: BertConfig, teacher_cfg: BertConfig, layer_map:LayerMap):
+    def __init__(self, teacher_cfg: BertConfig,student_cfg: BertConfig, layer_map:LayerMap):
         super().__init__()
         self.layer_map = layer_map
 
@@ -112,7 +112,7 @@ class KDAttention(KDLoss):
 
 class KDHiddenStates(KDLoss):
     def __init__(
-        self, student_cfg: BertConfig, teacher_cfg, layer_map, transform_per_layer=False
+        self, teacher_cfg: BertConfig, student_cfg:BertConfig, layer_map, transform_per_layer=False
     ):
         super().__init__()
 
@@ -255,7 +255,7 @@ class KDSequenceClassification(SequenceClassificationModel):
 
         loss = 0
 
-        for kd_loss in self.kd_losses.items():
+        for kd_loss in self.kd_losses:
             loss += kd_loss(teacher_output, student_output)
 
         return loss, predictions

@@ -101,8 +101,11 @@ def run_epoch(
     total_predictions = 0
 
     if isinstance(model.module,KDSequenceClassification):
-        print(model.module.kd_losses["transformer_layer"].kd_attention.layer_map)
-
+        for kd_loss in model.module.kd_losses:
+            if hasattr(kd_loss, "kd_attention"):
+                print("attention layer_map:",kd_loss.kd_attention.layer_map)
+                print("hidden layer_map:",kd_loss.kd_hidden_states.layer_map)
+    
     for step, batch in enumerate(dataloader):
         input_ids = batch.input_ids.to(device)
         token_type_ids = batch.token_type_ids.to(device)

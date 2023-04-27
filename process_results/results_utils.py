@@ -10,6 +10,9 @@ import matplotlib.pyplot as plt
 from kd_finetune import Args as KDFinetuneArgs
 from finetune import Args as FinetuneArgs
 
+def f(x):
+    return f"{x*100:.1f}"
+
 DATASETS = ["QNLI","RTE","SST-2","MRPC","MNLI","QQP","CoLA"]
 DEFAULT_METRIC = {
     "QNLI": "accuracy",
@@ -60,7 +63,10 @@ def read_log(file):
                     epoch_eval_lines += curr_line
                     curr_line = f.readline()
                 epoch_eval_lines += "}"
-                current_run.epoch_evals.append(eval(epoch_eval_lines))
+                epoch_eval = eval(epoch_eval_lines)
+                current_run.epoch_evals.append(epoch_eval)
+                current_run.args["lr"] = epoch_eval["lr"]
+                current_run.args["batch_size"] = epoch_eval["batch_size"]
 
             match = re.match("INFO:root:({'command_line'.+})\n", line)
             if match is not None:
@@ -88,13 +94,16 @@ def to_dataframe(logfile, metric="accuracy"):
     for run in training_runs:
         epoch_metrics = [get_metric(epoch_res, metric) for epoch_res in run.epoch_evals]
         
-        rows.append({
-            "lr":run.args["lr"],
-            "batch_size":run.args["batch_size"],
-            "best_metric":max(epoch_metrics),
-            "last3_mean":np.mean(epoch_metrics[-3:]),
-            "last3_std":np.std(epoch_metrics[-3:]),
-        })
+        if len(epoch_metrics)>0:
+            rows.append({
+                "lr":run.args["lr"],
+                "batch_size":run.args["batch_size"],
+                "epoch_metrics": epoch_metrics,
+                "avg_metric":np.mean(epoch_metrics),
+                "best_metric":max(epoch_metrics),
+                "last3_mean":np.mean(epoch_metrics[-3:]),
+                "last3_std":np.std(epoch_metrics[-3:]),
+            })
     
     return pd.DataFrame(rows)
 

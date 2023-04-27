@@ -7,12 +7,13 @@ import random
 import numpy 
 import torch
 from datetime import datetime
+import time
 
 from transformers.optimization import get_linear_schedule_with_warmup
 
 def distributed_setup(rank, world_size, port):
     if port is None:
-        port = random.randint(10000,20000)
+        port = int(time.time()*1000)%10000+10000
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 
