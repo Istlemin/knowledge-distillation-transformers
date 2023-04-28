@@ -1,5 +1,6 @@
 from ast import parse
 from collections import defaultdict
+import math
 from pathlib import Path, PosixPath
 import re
 import json
@@ -63,7 +64,7 @@ def read_log(file):
                     epoch_eval_lines += curr_line
                     curr_line = f.readline()
                 epoch_eval_lines += "}"
-                epoch_eval = eval(epoch_eval_lines)
+                epoch_eval = json.loads(epoch_eval_lines)
                 current_run.epoch_evals.append(epoch_eval)
                 current_run.args["lr"] = epoch_eval["lr"]
                 current_run.args["batch_size"] = epoch_eval["batch_size"]
@@ -73,7 +74,7 @@ def read_log(file):
                 command = eval(match.group(1))['command_line']
                 current_run = TrainingRunResult(command)
                 all_runs[str(current_run.args)] = current_run
-    return list(all_runs.values())
+    return list(run for run in all_runs.values() if len(run.epoch_evals))
 
 def get_metric(epoch_res,metric):
         if "dev_metrics" in epoch_res:
@@ -129,7 +130,52 @@ def make_plots(logfile, metric="accuracy"):
         make_plot(run, metric=metric)
         done_runs.add(str(run.args))
     plt.legend()
+    plt.xlabel("Epoch")
+    plt.ylabel("Dev Loss" if metric=="loss" else "Score")
     plt.show()
+
+import math
+import glob
+
+def plot_repeats(dataset, hp_path, rp_path, plot=False):
+    print(dataset)
+    training_runs_hp = read_log(hp_path)
+    rp_files = sorted(glob.glob(rp_path))
+    if len(rp_files)==0:
+        training_runs_rp = []
+    else:
+        training_runs_rp = read_log(rp_files[-1])
+    
+    if len(training_runs_rp)==0:
+        training_runs_rp.append(max([(max(eval_res["dev_metrics"][DEFAULT_METRIC[dataset]] for eval_res in run.epoch_evals),run) for run in training_runs_hp],key=lambda x:x[0])[1])
+    else:
+        for run in training_runs_hp:
+            if run.args["lr"]==training_runs_rp[0].args["lr"] and run.args["batch_size"]==training_runs_rp[0].args["batch_size"]:
+                training_runs_rp.append(run)
+
+    all_max_scores = []
+    for run in sorted(training_runs_rp,key=lambda run:run.args["seed"]):
+        scores = []
+        for eval_res in run.epoch_evals:
+            if "dev_metrics" in eval_res:
+                score = eval_res["dev_metrics"][DEFAULT_METRIC[dataset]]
+            else:
+                assert DEFAULT_METRIC[dataset] == "accuracy"
+                score = eval_res["dev_accuracy"]
+            if math.isnan(score):
+                score = -1
+            scores.append(score)
+        if plot:
+            plt.plot(range(1,len(scores)+1),scores,label=f"seed={run.args['seed']}")
+        all_max_scores.append(max(scores))
+    if plot:
+        plt.legend()
+        plt.xlabel("Epoch")
+        plt.ylabel("Score")
+        #plt.ylim([0,1])
+        plt.show()
+    print(all_max_scores)
+    print(f"{f(np.max(all_max_scores))} ({f(np.mean(all_max_scores))}{{\\footnotesize±{f(np.std(all_max_scores))})}}")
 
 if __name__=="__main__":
     read_log("../checkpoints/kd_finetune/tinybert/SST-2/tinybert/long_pretrain/prediction/log")

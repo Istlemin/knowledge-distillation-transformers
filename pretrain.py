@@ -17,7 +17,6 @@ from transformers import (
 
 from model import (
     BertForPreTrainingWithLoss,
-    ModelWithLoss,
     get_bert_config,
     load_model_from_disk,
 )
@@ -65,7 +64,7 @@ class MLMDataset(torch.utils.data.Dataset):
 
 
 def run_epoch(
-    model: ModelWithLoss,
+    model,
     dataloader: DataLoader,
     device: Device,
     optimizer: Optional[torch.optim.Optimizer] = None,
@@ -123,7 +122,7 @@ def run_epoch(
 
 def pretrain(
     gpu_idx: int,
-    model: ModelWithLoss,
+    model,
     args,
 ):
     dataset_size = sum(

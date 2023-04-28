@@ -202,6 +202,9 @@ def finetune(
         optimizer, total_train_steps, schedule=args.scheduler, warmup_proportion=0.1
     )
 
+    metrics = run_eval(model, dev_dataloader, device=device,num_gpus=args.num_gpus)
+    print(metrics)
+
     args.outputdir.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(0, args.num_epochs):

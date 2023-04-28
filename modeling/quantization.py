@@ -3,7 +3,7 @@ import math
 from torch import nn
 
 def clip_and_save(ctx, w, clip_val):
-    ctx.save_for_backward(w<-clip_val | w>clip_val)
+    ctx.save_for_backward((w<-clip_val) | (w>clip_val))
     return torch.clamp(w,-clip_val,clip_val)
 
 def gradient_apply_clipping(ctx, grad_output):
@@ -114,7 +114,7 @@ class QuantizedLinear(nn.Module):
         return nn.functional.linear(input, quant_weight, self.bias)
     
 class QuantizedEmbedding(nn.Module):
-    def __init__(self, embedding : nn.Linear, quanter):
+    def __init__(self, embedding : nn.Embedding, quanter):
         super().__init__()
         self.weight = embedding.weight
         self.padding_idx=embedding.padding_idx
