@@ -19,7 +19,7 @@ from model import (
 from modeling.bert import prepare_bert_for_kd, prepare_bert_for_quantization
 
 
-from kd import KDPred, KDTransformerLayers, KDSequenceClassification
+from kd import KDPred, KDTransformerLayers, KDSequenceClassification, LinearLayerMap
 from utils import set_random_seed
 
 class Args(FinetuneArgs, KDArgs):
@@ -27,7 +27,7 @@ class Args(FinetuneArgs, KDArgs):
     student_model_path:Optional[Path]=None
     student_model_config:Optional[Path]=None
 
-def main(args):
+def main(args : Args):
     print("KD Training")
     if args.port is None:
         args.port = random.randint(0,100000)
@@ -56,8 +56,22 @@ def main(args):
         #pass
         student = prepare_bert_for_kd(student)
     
+    l_student = student.config.num_hidden_layers
+    l_teacher = teacher.config.num_hidden_layers
+    hidden_layer_map = None
+    attention_layer_map = None
+    if args.layer_map == "linear":
+        hidden_layer_map = LinearLayerMap(l_student+1,l_teacher+1)
+        attention_layer_map = LinearLayerMap(l_student,l_teacher)
+    elif args.layer_map == "linear_uniform":
+        hidden_layer_map = LinearLayerMap(l_student+1,l_teacher+1, initialisation="uniform_start_0")
+        attention_layer_map = LinearLayerMap(l_student,l_teacher, initialisation="uniform")
+    elif args.layer_map is not None:
+        raise ValueError(f"{args.layer_map} is not a supported layer map")
+        
+    transformer_layer_kd = KDTransformerLayers(teacher.config, student.config, hidden_map=hidden_layer_map, attention_map=attention_layer_map)
     kd_losses_dict = {
-        "transformer_layer": KDTransformerLayers(teacher.config, student.config),
+        "transformer_layer": transformer_layer_kd,
         "prediction_layer": KDPred(),
     }
     print("Active losses:", args.kd_losses)

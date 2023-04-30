@@ -46,9 +46,11 @@ def get_optimizer(model, lr, weight_decay=0.01):
     param_optimizer = list(model.named_parameters())
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': weight_decay},
-        {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay) and "layer_map" not in n], 'weight_decay': weight_decay},
+        {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay) and "layer_map" not in n], 'weight_decay': 0.0},
+        {'params': [p for n,p in param_optimizer if "layer_map" in n], 'lr':0.0002}
     ]
+
     return torch.optim.AdamW(
         optimizer_grouped_parameters,
         lr=lr)

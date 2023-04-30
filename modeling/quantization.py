@@ -7,7 +7,7 @@ def clip_and_save(ctx, w, clip_val):
     return torch.clamp(w,-clip_val,clip_val)
 
 def gradient_apply_clipping(ctx, grad_output):
-    clip_mask = ctx.saved_tensors
+    clip_mask, = ctx.saved_tensors
     return grad_output * clip_mask
 
 class TwnQuantizerFunction(torch.autograd.Function):

@@ -23,11 +23,12 @@ class FinetuneArgs(TrainArgs):
     eval_steps: int = None
     metric: Optional[str] = None
     use_best_hp: bool = False
+    quantize: bool = False
 
 
 class KDArgs(Tap):
-    quantize: bool = False
     kd_losses: List[str]
+    layer_map: Optional[str] = None
 
 
 if __name__ == "__main__":

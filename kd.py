@@ -9,17 +9,21 @@ from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutp
 from transformers import BertForMaskedLM, BertForSequenceClassification, BertConfig
 
 
-
 ModelOutput = Union[MaskedLMOutput, SequenceClassifierOutput]
 Model = Union[BertForMaskedLM, BertForSequenceClassification]
 
+
 class KDLoss(nn.Module):
-    def forward(self, teacher_output: ModelOutput, student_output: ModelOutput) -> torch.tensor:
+    def forward(
+        self, teacher_output: ModelOutput, student_output: ModelOutput
+    ) -> torch.tensor:
         pass
 
+
 class LayerMap(nn.Module):
-    def forward(self, teacher_data : torch.tensor, layer_index:int) -> torch.tensor:
+    def forward(self, teacher_data: torch.tensor, layer_index: int) -> torch.tensor:
         pass
+
 
 def soft_cross_entropy(predicts, targets):
     # print("soft cross:")
@@ -38,7 +42,6 @@ class KDPred(KDLoss):
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):
         return soft_cross_entropy(student_output.logits, teacher_output.logits)
-
 
 
 class ConstantLayerMap(LayerMap):
@@ -71,30 +74,47 @@ class ConstantLayerMap(LayerMap):
 
 
 class LinearLayerMap(LayerMap):
-    def __init__(self, student_layers, teacher_layers, initialisation=None):
+    def __init__(self, student_layers, teacher_layers, initialisation=None, init_strength=1):
         super().__init__()
-        self.layer_map = torch.ones((student_layers, teacher_layers))
+        self.layer_map = torch.zeros((student_layers, teacher_layers))
         if initialisation == "uniform":
             for i in range(student_layers):
                 self.layer_map[
                     i, (i + 1) * (teacher_layers) // (student_layers) - 1
-                ] = 10000000
+                ] = init_strength
+        elif initialisation == "uniform_start_0":
+            for i in range(student_layers):
+                self.layer_map[
+                    i, i * ((teacher_layers-1) // (student_layers)+1)
+                ] = init_strength
         elif initialisation == "binned":
             for i in range(teacher_layers):
-                self.layer_map[i * (student_layers) // (teacher_layers), i] = 10000000
-        elif initialisation is not None:
+                self.layer_map[i * (student_layers) // (teacher_layers), i] = init_strength
+        elif initialisation is None:
+            self.layer_map = self.layer_map + 1
+        else:
             raise Exception("No such layer map implemented")
         self.layer_map = nn.Parameter(self.layer_map)
 
     def forward(self, teacher_data, layer_index):
-        lmap = F.softmax(self.layer_map[layer_index], dim=0).reshape(
+        lmap = F.softmax(10*self.layer_map[layer_index], dim=0).reshape(
             (-1,) + tuple(1 for _ in range(len(teacher_data[0].shape)))
         )
-        return torch.sum(teacher_data * lmap.reshape((-1, 1)), dim=0)
+        
+        return torch.sum(teacher_data * lmap, dim=0)
+    
+    def __str__(self):
+        output = "\n"
+        for row in self.layer_map:
+            row = F.softmax(10*row, dim=0)
+            output += " ".join(f"{x:.2f}" if x<1000 else "  h " for x in row) + "\n"
+        return output
 
 
 class KDAttention(KDLoss):
-    def __init__(self, teacher_cfg: BertConfig,student_cfg: BertConfig, layer_map:LayerMap):
+    def __init__(
+        self, teacher_cfg: BertConfig, student_cfg: BertConfig, layer_map: LayerMap
+    ):
         super().__init__()
         self.layer_map = layer_map
 
@@ -112,7 +132,11 @@ class KDAttention(KDLoss):
 
 class KDHiddenStates(KDLoss):
     def __init__(
-        self, teacher_cfg: BertConfig, student_cfg:BertConfig, layer_map, transform_per_layer=False
+        self,
+        teacher_cfg: BertConfig,
+        student_cfg: BertConfig,
+        layer_map,
+        transform_per_layer=False,
     ):
         super().__init__()
 
@@ -155,26 +179,33 @@ class KDHiddenStates(KDLoss):
 
 
 class KDTransformerLayers(KDLoss):
-    def __init__(self, teacher_cfg: BertConfig, student_cfg: BertConfig):
+    def __init__(
+        self,
+        teacher_cfg: BertConfig,
+        student_cfg: BertConfig,
+        hidden_map: LayerMap = None,
+        attention_map: LayerMap = None,
+    ):
         super().__init__()
 
-        self.kd_hidden_states = KDHiddenStates(
-            teacher_cfg,
-            student_cfg,
-            layer_map=ConstantLayerMap(
+        if hidden_map is None:
+            hidden_map = ConstantLayerMap(
                 student_cfg.num_hidden_layers,
                 teacher_cfg.num_hidden_layers,
                 map_type="uniform_start_0",
-            ),
-        )
-        self.kd_attention = KDAttention(
-            teacher_cfg,
-            student_cfg,
-            layer_map=ConstantLayerMap(
+            )
+        if attention_map is None:
+            attention_map = ConstantLayerMap(
                 student_cfg.num_hidden_layers,
                 teacher_cfg.num_hidden_layers,
                 map_type="uniform",
-            ),
+            )
+
+        self.kd_hidden_states = KDHiddenStates(
+            teacher_cfg, student_cfg, layer_map=hidden_map
+        )
+        self.kd_attention = KDAttention(
+            teacher_cfg, student_cfg, layer_map=attention_map
         )
 
     def forward(self, teacher_output: ModelOutput, student_output: ModelOutput):

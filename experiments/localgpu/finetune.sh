@@ -5,9 +5,9 @@ seed=0
 gluepath=$base_url"GLUE-baselines/glue_data/"
 dataset=$1
 #model_path=$base_url"models/pretrained_bert.pt" 
-#model_path="prajjwal1/bert-small" 
-model_path=$base_url"checkpoints/finetune/bert_base/QQP/bestmodel/"
-outputdir=$base_url"checkpoints/finetune/bert-small/"$dataset"/"
+#model_path="prajjwal1/bert-medium" 
+model_path=$base_url"checkpoints/finetune/bert_base/"$dataset"/bestmodel/"
+outputdir=$base_url"checkpoints/finetune/bert-base-quantised/"$dataset"/"
 hp_logfile=log_hp_$(date +'%Y-%m-%d_%H:%M:%S')
 repeat_logfile=log_rp_$(date +'%Y-%m-%d_%H:%M:%S')
 
@@ -17,13 +17,15 @@ args="--gluepath $gluepath \
     --model $model_path \
     --seed $seed \
     --num_gpus 1 \
-    --num_epochs 5"
-devices=0
+    --num_epochs 3 \
+    --quantize"
+
+devices=3
 
 # Grid search
-# CUDA_VISIBLE_DEVICES=$devices python3 finetune.py $args --logfile $hp_logfile --lr 1e-5 --batch_size 32
-# CUDA_VISIBLE_DEVICES=$devices python3 finetune.py $args --logfile $hp_logfile --lr 2e-5 --batch_size 32
-# CUDA_VISIBLE_DEVICES=$devices python3 finetune.py $args --logfile $hp_logfile --lr 5e-5 --batch_size 32
+CUDA_VISIBLE_DEVICES=$devices python3 finetune.py $args --logfile $hp_logfile --lr 1e-5 --batch_size 32
+CUDA_VISIBLE_DEVICES=$devices python3 finetune.py $args --logfile $hp_logfile --lr 2e-5 --batch_size 32
+CUDA_VISIBLE_DEVICES=$devices python3 finetune.py $args --logfile $hp_logfile --lr 5e-5 --batch_size 32
 # CUDA_VISIBLE_DEVICES=$devices python3 finetune.py $args --logfile $hp_logfile --lr 1e-5 --batch_size 16
 # CUDA_VISIBLE_DEVICES=$devices python3 finetune.py $args --logfile $hp_logfile --lr 2e-5 --batch_size 16
 # CUDA_VISIBLE_DEVICES=$devices python3 finetune.py $args --logfile $hp_logfile --lr 5e-5 --batch_size 16

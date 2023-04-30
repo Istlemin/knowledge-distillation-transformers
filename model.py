@@ -122,6 +122,12 @@ def get_bert_config(config_name):
         config.hidden_size = 512
         config.num_hidden_layers = 4
         return config
+    if config_name == "medium":
+        config.num_attention_heads = 8
+        config.intermediate_size = 2048
+        config.hidden_size = 512
+        config.num_hidden_layers = 8
+        return config
     if config_name == "TinyBERT":
         config.num_attention_heads = 12
         config.intermediate_size = 1200

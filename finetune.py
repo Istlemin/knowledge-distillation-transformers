@@ -19,6 +19,7 @@ import random
 import numpy as np
 
 from load_glue import load_tokenized_glue_dataset
+from modeling.bert import prepare_bert_for_quantization
 from utils import F1_score, distributed_cleanup, distributed_setup, matthews_correlation, set_random_seed, setup_logging
 from model import (
     BertForSequenceClassificationWithLoss,
@@ -57,6 +58,9 @@ def run_eval(model, dataloader:DataLoader,device: Device,num_gpus):
         
         loss = torch.mean(loss)
         losses.append(loss.detach().item())
+
+        del loss,predictions,input_ids,token_type_ids,attention_mask,labels
+        torch.cuda.empty_cache()
     
     # all_proc_losses = [None for _ in range(num_gpus)]
     # print("Reducing!")    
@@ -99,12 +103,6 @@ def run_epoch(
     losses = []
     correct_predictions = 0
     total_predictions = 0
-
-    if isinstance(model.module,KDSequenceClassification):
-        for kd_loss in model.module.kd_losses:
-            if hasattr(kd_loss, "kd_attention"):
-                print("attention layer_map:",kd_loss.kd_attention.layer_map)
-                print("hidden layer_map:",kd_loss.kd_hidden_states.layer_map)
     
     for step, batch in enumerate(dataloader):
         input_ids = batch.input_ids.to(device)
@@ -139,6 +137,12 @@ def run_epoch(
         
         if step%50==0:
             torch.cuda.empty_cache()
+            
+            if isinstance(model.module,KDSequenceClassification):
+                for kd_loss in model.module.kd_losses:
+                    if hasattr(kd_loss, "kd_attention"):
+                        print("attention layer_map:",kd_loss.kd_attention.layer_map)
+                        print("hidden layer_map:",kd_loss.kd_hidden_states.layer_map)
 
     loss = np.mean(losses)
     return torch.tensor(loss,device=device), torch.tensor(correct_predictions / total_predictions, device=device)
@@ -157,7 +161,7 @@ def finetune(
         metric = "accuracy"
         if args.dataset == "CoLA":
             metric = "matthews"
-        if args.dataset in ["MRPC", "QQP"]:
+        if args.dataset in ["QQP"]:
             metric = "F1_score"
 
     set_random_seed(args.seed)
@@ -281,6 +285,9 @@ def main(args):
         best_json = json.loads((args.outputdir / "best.json").read_text())
         args.lr = best_json["lr"]
         args.batch_size = best_json["batch_size"]
+
+    if args.quantize:
+        model = prepare_bert_for_quantization(model)
 
     torch.multiprocessing.spawn(
         finetune,

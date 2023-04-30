@@ -20,7 +20,7 @@ DEFAULT_METRIC = {
     "RTE": "accuracy",
     "SST-2": "accuracy",
     "MNLI": "accuracy",
-    "MRPC": "F1_score",
+    "MRPC": "accuracy",
     "QQP": "F1_score",
     "CoLA": "matthews",
 }
@@ -137,31 +137,35 @@ def make_plots(logfile, metric="accuracy"):
 import math
 import glob
 
-def plot_repeats(dataset, hp_path, rp_path, plot=False):
+def plot_repeats(dataset, hp_path, rp_path, append_best=True, plot=False):
     print(dataset)
-    training_runs_hp = read_log(hp_path)
+    training_runs_hp = read_log(glob.glob(hp_path)[0])
     rp_files = sorted(glob.glob(rp_path))
     if len(rp_files)==0:
         training_runs_rp = []
     else:
         training_runs_rp = read_log(rp_files[-1])
     
-    if len(training_runs_rp)==0:
-        training_runs_rp.append(max([(max(eval_res["dev_metrics"][DEFAULT_METRIC[dataset]] for eval_res in run.epoch_evals),run) for run in training_runs_hp],key=lambda x:x[0])[1])
-    else:
-        for run in training_runs_hp:
-            if run.args["lr"]==training_runs_rp[0].args["lr"] and run.args["batch_size"]==training_runs_rp[0].args["batch_size"]:
-                training_runs_rp.append(run)
+    def get_score(eval_res):
+        if "dev_metrics" in eval_res:
+            return eval_res["dev_metrics"][DEFAULT_METRIC[dataset]]
+        else:
+            assert DEFAULT_METRIC[dataset] == "accuracy"
+            return eval_res["dev_accuracy"]
+
+    if append_best:
+        if len(training_runs_rp)==0:
+            training_runs_rp.append(max([(max(get_score(eval_res) for eval_res in run.epoch_evals),run) for run in training_runs_hp],key=lambda x:x[0])[1])
+        else:
+            for run in training_runs_hp:
+                if run.args["lr"]==training_runs_rp[0].args["lr"] and run.args["batch_size"]==training_runs_rp[0].args["batch_size"]:
+                    training_runs_rp.append(run)
 
     all_max_scores = []
     for run in sorted(training_runs_rp,key=lambda run:run.args["seed"]):
         scores = []
         for eval_res in run.epoch_evals:
-            if "dev_metrics" in eval_res:
-                score = eval_res["dev_metrics"][DEFAULT_METRIC[dataset]]
-            else:
-                assert DEFAULT_METRIC[dataset] == "accuracy"
-                score = eval_res["dev_accuracy"]
+            score = get_score(eval_res)
             if math.isnan(score):
                 score = -1
             scores.append(score)
@@ -175,7 +179,7 @@ def plot_repeats(dataset, hp_path, rp_path, plot=False):
         #plt.ylim([0,1])
         plt.show()
     print(all_max_scores)
-    print(f"{f(np.max(all_max_scores))} ({f(np.mean(all_max_scores))}{{\\footnotesize±{f(np.std(all_max_scores))})}}")
+    print(f"\\textbf{{{f(np.max(all_max_scores))}}} ({f(np.mean(all_max_scores))}{{\\footnotesize±{f(np.std(all_max_scores))}}})")
 
 if __name__=="__main__":
     read_log("../checkpoints/kd_finetune/tinybert/SST-2/tinybert/long_pretrain/prediction/log")
