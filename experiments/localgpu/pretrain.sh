@@ -1,20 +1,12 @@
 #!/bin/bash
-#SBATCH --nodes=1 --cpus-per-task 32
-#SBATCH --time=24:00:00
-#SBATCH --gres=gpu:8
-#SBATCH -J kd_pretrain_lr1e-4_seed0
-# module load pytorch/1.9.0
-# source activate torch1.9
 
-#base_url="/jmain02/home/J2AD015/axf03/fxe31-axf03/project/"
 base_url="/local-zfs/fwe21/project/"
 seed=0
-dataset_path=$base_url"TinyBERT/corpus_masked/"
+dataset_path=$base_url"wikipedia_tokenized/"
 model_path=$base_url"models/general_small12h_mlm.pt" 
 checkpoint_path=$base_url"checkpoints/." 
 
-
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+CUDA_VISIBLE_DEVICES=0 \
 
 python3 pretrain.py \
     --dataset $dataset_path \

@@ -24,7 +24,7 @@ def distributed_cleanup():
     dist.destroy_process_group()
 
 
-def setup_logging(path: Optional[Path] = None, logfile_name : str = "log"):
+def setup_logging(path: Optional[Path] = None, logfile_name : str = "log", log_timestamp=False):
     handlers = [logging.StreamHandler()]
     if path is not None:
         path.mkdir(exist_ok=True, parents=True)
@@ -32,7 +32,15 @@ def setup_logging(path: Optional[Path] = None, logfile_name : str = "log"):
         #path.unlink(missing_ok=True)
         handlers.append(logging.FileHandler(path))
 
-    logging.basicConfig(level=logging.INFO, handlers=handlers)
+    if log_timestamp:
+        logging.basicConfig(
+            format='%(asctime)s %(levelname)-8s %(message)s',
+            datefmt='%H:%M:%S',
+            level=logging.INFO,
+            handlers=handlers
+        )
+    else:
+        logging.basicConfig(level=logging.INFO, handlers=handlers)
     logging.info(f"Logfile: {path}")
 
 def set_random_seed(seed):
@@ -48,7 +56,7 @@ def get_optimizer(model, lr, weight_decay=0.01):
     optimizer_grouped_parameters = [
         {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay) and "layer_map" not in n], 'weight_decay': weight_decay},
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay) and "layer_map" not in n], 'weight_decay': 0.0},
-        {'params': [p for n,p in param_optimizer if "layer_map" in n], 'lr':0.0002}
+        {'params': [p for n,p in param_optimizer if "layer_map" in n], 'lr':0.0001}
     ]
 
     return torch.optim.AdamW(

@@ -1,8 +1,10 @@
 from collections import defaultdict
 from functools import partial
+import logging
 from multiprocessing import Process, Queue
 import multiprocessing
 import pickle
+from sklearn.utils import gen_batches
 
 from torch.multiprocessing import Pool
 from datasets.arrow_dataset import Dataset
@@ -22,14 +24,24 @@ import argparse
 import re
 from tqdm import tqdm
 
+from utils import set_random_seed
 
-class PretrainItem(NamedTuple):
+
+class MLMInstances(NamedTuple):
     tokens: torch.tensor
     masked_tokens: torch.tensor
     is_masked: torch.tensor
     segment_ids: torch.tensor
     is_random_next: torch.tensor
 
+def combine_mlm_instances(batches:List[MLMInstances]):
+    return MLMInstances(
+        tokens = torch.cat([x.tokens for x in batches]),
+        masked_tokens = torch.cat([x.masked_tokens for x in batches]),
+        is_masked = torch.cat([x.is_masked for x in batches]),
+        segment_ids = torch.cat([x.segment_ids for x in batches]),
+        is_random_next = torch.cat([x.is_random_next for x in batches]),
+    )
 
 class PretrainingDatasetGenerator:
     mask_token: int
@@ -76,30 +88,6 @@ class PretrainingDatasetGenerator:
         masked_tokens[is_masked] = replacement[is_masked]
 
         return masked_tokens, is_masked
-
-    # def apply_masking(
-    #     self,
-    #     instance_tokens: List[int],
-    #     seq_len: int,
-    #     masked_ml_prob=0.15,
-    # ):
-    #     masked_tokens = []
-    #     is_masked = []
-
-    #     for token in instance_tokens:
-    #         if random.random() < masked_ml_prob and token not in self.special_tokens:
-    #             r = random.random()
-    #             if r < 0.8:
-    #                 masked_tokens.append(self.tokenizer.mask_token_id)
-    #             elif r < 0.9:
-    #                 masked_tokens.append(token)
-    #             else:
-    #                 masked_tokens.append(random.choice(self.vocab))
-    #             is_masked.append(True)
-    #         else:
-    #             masked_tokens.append(token)
-    #             is_masked.append(False)
-    #     return masked_tokens, is_masked
 
     def truncate_seq_pair(self, tokens_a, tokens_b, max_num_tokens):
         """Truncates a pair of sequences to a maximum sequence length. Modified from Google's BERT repo."""
@@ -193,34 +181,29 @@ class PretrainingDatasetGenerator:
 
         masked_tokens, is_masked = self.apply_masking(tokens)
 
-        instances = [
-            PretrainItem(
-                tokens=tokens[i].int(),
-                masked_tokens=masked_tokens[i].int(),
-                is_masked=is_masked[i],
-                is_random_next=is_random_next[i],
-                segment_ids=segment_ids[i].int(),
-            )
-            for i in range(len(tokens))
-        ]
-        return instances
-
+        return MLMInstances(
+            tokens=tokens.short(),
+            masked_tokens=masked_tokens.short(),
+            is_masked=is_masked.bool(),
+            is_random_next=is_random_next.bool(),
+            segment_ids=segment_ids.bool(),
+        )
 
 def generate_document_batch(args):
-    print("Start generate")
-    documents, seq_len = args
+    logging.info("Start generate")
+    documents, seq_len, seed = args
+    set_random_seed(seed)
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", do_lower_case=True)
     dataset_generator = PretrainingDatasetGenerator(tokenizer, documents)
-    print("Generating...")
-    instances = sum(
-        [dataset_generator.get_instances(doc, seq_len) for doc in tqdm(documents)], []
-    )
-    print("Generated",len(instances),"instances")
-    return pickle.dumps(instances)
+    logging.info("Generating...")
+    gen_batches = [dataset_generator.get_instances(doc, seq_len) for doc in tqdm(documents)]
+    gen_batch = combine_mlm_instances(gen_batches)
+    logging.info(f"Generated {len(gen_batch.tokens)} instances")
+    return pickle.dumps(gen_batch)
 
-def prepare_pretraining_dataset(dataset_path,num_workers=8):
+def prepare_pretraining_dataset(dataset_path,num_workers=8,seed=0):
     tokenized_documents = pickle.load(open(dataset_path, "rb"))
-    print("Loaded tokenized")
+    logging.info("Loaded tokenized")
     batch_size = len(tokenized_documents) // num_workers + 1
     document_batches = [
         tokenized_documents[i : i + batch_size]
@@ -229,17 +212,19 @@ def prepare_pretraining_dataset(dataset_path,num_workers=8):
     seq_len = 128
 
     with Pool(num_workers) as p:
-        print("Starting imap")
         res = list(p.imap_unordered(
             generate_document_batch,
             zip(
                 document_batches,
                 [seq_len] * num_workers,
+                [seed]*num_workers
             ),
             chunksize=1
         ))
-        res = sum([pickle.loads(x) for x in res],[])
+        logging.info("got all res")
+        res = combine_mlm_instances([pickle.loads(x) for x in res])
     
+    logging.info(f"Combined: {res.tokens.shape}")
     return res
 
 def main():

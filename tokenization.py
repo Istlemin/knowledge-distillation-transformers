@@ -1,6 +1,6 @@
 from pathlib import Path
 import random
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, BertTokenizer
 from datasets import load_dataset
 
 from transformers import AutoTokenizer
@@ -28,7 +28,7 @@ def tokenize_document_batch(documents,outdir):
 
 def batched_tokenize(document_dataset, outdir, batch_size=100000,num_workers=8):
     shuffle_perm = list(range(len(document_dataset)))
-    random.shuffle(shuffle_perm)
+    #random.shuffle(shuffle_perm)
 
     for ind,i in enumerate(tqdm(range(0, len(document_dataset), batch_size))):
         print("Getting document batch")
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     dataset = load_dataset("wikipedia", "20220301.en")
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    batch_size = len(dataset["train"]) // 64
+    batch_size = len(dataset["train"]) // 64 + 1
     print("Tokenizing...")
 
     batched_tokenize(dataset["train"], Path("../wikipedia_tokenized/"), batch_size)

@@ -66,6 +66,9 @@ def main(args : Args):
     elif args.layer_map == "linear_uniform":
         hidden_layer_map = LinearLayerMap(l_student+1,l_teacher+1, initialisation="uniform_start_0")
         attention_layer_map = LinearLayerMap(l_student,l_teacher, initialisation="uniform")
+    elif args.layer_map == "binned":
+        hidden_layer_map = LinearLayerMap(l_student+1,l_teacher+1, initialisation="binned")
+        attention_layer_map = LinearLayerMap(l_student,l_teacher, initialisation="binned")
     elif args.layer_map is not None:
         raise ValueError(f"{args.layer_map} is not a supported layer map")
         

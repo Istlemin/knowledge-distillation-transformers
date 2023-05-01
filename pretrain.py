@@ -1,6 +1,7 @@
 from glob import glob
 import logging
 from pathlib import Path
+import pickle
 from socket import IP_DEFAULT_MULTICAST_TTL
 from typing import Optional
 from datasets.arrow_dataset import Dataset
@@ -20,6 +21,7 @@ from model import (
     get_bert_config,
     load_model_from_disk,
 )
+from prepare_pretraining_dataset import prepare_pretraining_dataset
 from utils import get_optimizer, get_scheduler
 
 from tqdm.auto import tqdm
@@ -38,28 +40,23 @@ class MLMBatch(NamedTuple):
 
 class MLMDataset(torch.utils.data.Dataset):
     def __init__(self, path):
-        self.dataset: Dataset = Dataset.load_from_disk(path)
-        self.dataset.set_format("torch")
-        # self.tokens = self.dataset["tokens"]
-        # self.masked_tokens = self.dataset["masked_tokens"]
-        # self.is_masked = self.dataset["is_masked"]
-
-        self.tokens = self.dataset["token_ids"]
-        self.masked_tokens = self.dataset["masked_token_ids"]
-        self.is_masked = self.dataset["masked_positions"]
-        self.segment_ids = self.dataset["segment_ids"]
-        self.is_random_next = self.dataset["is_random_next"]
+        dataset = prepare_pretraining_dataset(path)
+        self.tokens = dataset.tokens
+        self.masked_tokens = dataset.masked_tokens
+        self.is_masked = dataset.is_masked
+        self.segment_ids = dataset.segment_ids
+        self.is_random_next = dataset.is_random_next
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.tokens)
 
     def __getitem__(self, item):
         return MLMBatch(
-            tokens=self.tokens[item],
-            masked_tokens=self.masked_tokens[item],
-            is_masked=self.is_masked[item],
-            segment_ids=self.segment_ids[item],
-            is_random_next=self.is_random_next[item],
+            tokens=self.tokens[item].long(),
+            masked_tokens=self.masked_tokens[item].long(),
+            is_masked=self.is_masked[item].bool(),
+            segment_ids=self.segment_ids[item].long(),
+            is_random_next=self.is_random_next[item].bool(),
         )
 
 
@@ -78,6 +75,7 @@ def run_epoch(
     correct_word_predictions = []
     correct_next_predictions = []
 
+    logging.info("Starting train loop")
     for i, batch in enumerate(dataloader):
         tokens = batch.tokens[:, :].to(device)
         masked_tokens = batch.masked_tokens[:, :].to(device)
@@ -103,8 +101,6 @@ def run_epoch(
 
         if optimizer is not None:
             optimizer.step()
-        if scheduler is not None:
-            scheduler.step()
 
         desc = f"Loss: " + "\t".join([f"{x:.4f}" for x  in torch.mean(torch.tensor(losses,device=device),dim=0).tolist()]) + "\t"
         desc += f"Word Acc: {np.mean(correct_word_predictions)*100:.2f}%,\t" + \
@@ -115,6 +111,7 @@ def run_epoch(
 
         if i%200==0:
             torch.cuda.empty_cache()
+    logging.info("Finished train loop")
 
     loss = torch.mean(torch.tensor(losses,device=device),dim=0)
     return loss, np.mean(correct_word_predictions), np.mean(correct_next_predictions)
@@ -125,11 +122,6 @@ def pretrain(
     model,
     args,
 ):
-    dataset_size = sum(
-        len(Dataset.load_from_disk(args.dataset_path / f"part_{i}"))
-        for i in range(args.dataset_parts)
-    )
-
     set_random_seed(args.seed)
     if gpu_idx != -1:
         model = model.to(gpu_idx)
@@ -142,9 +134,9 @@ def pretrain(
     else:
         device = torch.device("cpu")
 
-    setup_logging(args.checkpoint_path)
+    setup_logging(args.checkpoint_path,log_timestamp=True)
 
-    total_train_steps = dataset_size * args.num_epochs // args.batch_size
+    total_train_steps = args.dataset_parts * args.num_epochs
 
     optimizer = get_optimizer(model, args.lr)
     scheduler = get_scheduler(optimizer, total_train_steps, schedule=args.scheduler)
@@ -167,8 +159,10 @@ def pretrain(
 
     for epoch in range(start_epoch, args.num_epochs):
         for dataset_part_idx in range(start_part, args.dataset_parts):
-            dataset = MLMDataset(args.dataset_path / f"part_{dataset_part_idx}")
-
+            scheduler.step()
+            logging.info("Starting dataset part")
+            dataset = MLMDataset(args.dataset_path / f"{dataset_part_idx}")
+            logging.info("Loaded dataset")
             train_sampler = torch.utils.data.distributed.DistributedSampler(
                 dataset, num_replicas=args.num_gpus, rank=gpu_idx, shuffle=True
             )
