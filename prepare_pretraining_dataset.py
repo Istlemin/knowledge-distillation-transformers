@@ -43,78 +43,69 @@ def combine_mlm_instances(batches:List[MLMInstances]):
         is_random_next = torch.cat([x.is_random_next for x in batches]),
     )
 
+
+def apply_masking(
+    tokens: torch.tensor,
+    tokenizer,
+    masked_ml_prob=0.15,
+    replacement_probabilities=[0.8, 0.1, 0.1],
+):
+    is_masked = torch.bernoulli(torch.ones_like(tokens).float() * masked_ml_prob).bool()
+    for special_token in [
+        tokenizer.cls_token_id,
+        tokenizer.sep_token_id,
+        tokenizer.pad_token_id,
+    ]:
+        is_masked &= tokens != special_token
+
+    mask_replacement = torch.ones_like(tokens) * tokenizer.mask_token_id
+    random_replacement = torch.randint(0, len(tokenizer), tokens.shape)
+
+    replacement_choices = torch.multinomial(
+        torch.tensor(replacement_probabilities), tokens.numel(), replacement=True
+    ).long()
+    replacement = torch.stack(
+        [mask_replacement.flatten(), tokens.flatten(), random_replacement.flatten()]
+    )[replacement_choices.long(), torch.arange(tokens.numel())].reshape(tokens.shape)
+
+    masked_tokens = tokens.clone()
+    masked_tokens[is_masked] = replacement[is_masked]
+
+    return masked_tokens, is_masked
+
+def truncate_seq_pair(tokens_a, tokens_b, max_num_tokens):
+    """Truncates a pair of sequences to a maximum sequence length. Modified from Google's BERT repo."""
+    tokens_a_interval = [0, len(tokens_a)]
+    tokens_b_interval = [0, len(tokens_b)]
+    while True:
+        token_a_len = tokens_a_interval[1] - tokens_a_interval[0]
+        token_b_len = tokens_b_interval[1] - tokens_b_interval[0]
+        total_length = token_a_len + token_b_len
+        if total_length <= max_num_tokens:
+            break
+
+        trunc_tokens = (
+            tokens_a_interval if token_a_len > token_b_len else tokens_b_interval
+        )
+        assert trunc_tokens[0] < trunc_tokens[1]
+
+        # We want to sometimes truncate from the front and sometimes from the
+        # back to add more randomness and avoid biases.
+        if random.random() < 0.5:
+            trunc_tokens[0] += 1
+        else:
+            trunc_tokens[1] -= 1
+    return (
+        tokens_a[tokens_a_interval[0] : tokens_a_interval[1]],
+        tokens_b[tokens_b_interval[0] : tokens_b_interval[1]],
+    )
+
 class PretrainingDatasetGenerator:
-    mask_token: int
     tokenizer: PreTrainedTokenizer
-    instances: List[Dict]
-    is_wordpiece_suffix: torch.Tensor
 
     def __init__(self, tokenizer: PreTrainedTokenizer, documents: List[List[int]]):
-        self.documents = documents  # [doc[::-1] for doc in documents]
+        self.documents = documents
         self.tokenizer = tokenizer
-        assert self.tokenizer.mask_token_id is not None
-        self.mask_token = self.tokenizer.mask_token_id
-        self.is_wordpiece_suffix = torch.zeros(len(self.tokenizer), dtype=torch.bool)
-        for token_string, idx in self.tokenizer.get_vocab().items():
-            self.is_wordpiece_suffix[idx] = token_string[:2] == "##"
-        self.vocab = list(self.tokenizer.get_vocab().values())
-        self.special_tokens = [
-            self.tokenizer.cls_token_id,
-            self.tokenizer.sep_token_id,
-            self.tokenizer.pad_token_id,
-        ]
-
-    def apply_masking(
-        self,
-        tokens: torch.tensor,
-        masked_ml_prob=0.15,
-        replacement_probabilities=[0.8, 0.1, 0.1],
-    ):
-        is_masked = torch.bernoulli(torch.ones_like(tokens) * masked_ml_prob).bool()
-        for special_token in self.special_tokens:
-            is_masked &= tokens != special_token
-
-        mask_replacement = torch.ones_like(tokens) * self.mask_token
-        random_replacement = torch.randint(0, len(self.tokenizer), tokens.shape)
-
-        replacement_choices = torch.multinomial(
-            torch.tensor(replacement_probabilities), tokens.numel(), replacement=True
-        ).long()
-        replacement = torch.stack(
-            [mask_replacement.flatten(), tokens.flatten(), random_replacement.flatten()]
-        )[replacement_choices.long(), torch.arange(tokens.numel())].reshape(tokens.shape)
-
-        masked_tokens = tokens.clone()
-        masked_tokens[is_masked] = replacement[is_masked]
-
-        return masked_tokens, is_masked
-
-    def truncate_seq_pair(self, tokens_a, tokens_b, max_num_tokens):
-        """Truncates a pair of sequences to a maximum sequence length. Modified from Google's BERT repo."""
-        tokens_a_interval = [0, len(tokens_a)]
-        tokens_b_interval = [0, len(tokens_b)]
-        while True:
-            token_a_len = tokens_a_interval[1] - tokens_a_interval[0]
-            token_b_len = tokens_b_interval[1] - tokens_b_interval[0]
-            total_length = token_a_len + token_b_len
-            if total_length <= max_num_tokens:
-                break
-
-            trunc_tokens = (
-                tokens_a_interval if token_a_len > token_b_len else tokens_b_interval
-            )
-            assert trunc_tokens[0] < trunc_tokens[1]
-
-            # We want to sometimes truncate from the front and sometimes from the
-            # back to add more randomness and avoid biases.
-            if random.random() < 0.5:
-                trunc_tokens[0] += 1
-            else:
-                trunc_tokens[1] -= 1
-        return (
-            tokens_a[tokens_a_interval[0] : tokens_a_interval[1]],
-            tokens_b[tokens_b_interval[0] : tokens_b_interval[1]],
-        )
 
     def get_instances(self, document, seq_len):
         instances_tokens = []
@@ -133,7 +124,7 @@ class PretrainingDatasetGenerator:
             while len(sum(sampled_sentences, [])) < target_seq_len and len(document):
                 sampled_sentences.append(document.pop())
 
-            num_a_sentences = random.randint(1, len(sampled_sentences))
+            num_a_sentences = random.randint(1, max(1,len(sampled_sentences)-1))
             part_a = sum(sampled_sentences[:num_a_sentences], [])
             sampled_sentences = sampled_sentences[num_a_sentences:]
 
@@ -143,7 +134,7 @@ class PretrainingDatasetGenerator:
                 random_doc = self.documents[random.randint(0, len(self.documents) - 1)]
                 for i in range(random.randint(0, len(random_doc) - 1), len(random_doc)):
                     part_b.extend(random_doc[i])
-                    if len(part_a) + len(part_b) > target_seq_len:
+                    if len(part_a) + len(part_b) >= target_seq_len:
                         break
             else:
                 is_random_next = False
@@ -152,12 +143,12 @@ class PretrainingDatasetGenerator:
                 else:
                     for i in range(len(sampled_sentences)):
                         part_b.extend(sampled_sentences[i])
-                        if len(part_a) + len(part_b) > target_seq_len:
+                        if len(part_a) + len(part_b) >= target_seq_len:
                             sampled_sentences = sampled_sentences[i:]
                             break
             document += sampled_sentences[::-1]
 
-            part_a, part_b = self.truncate_seq_pair(part_a, part_b, max_num_tokens)
+            part_a, part_b = truncate_seq_pair(part_a, part_b, max_num_tokens)
 
             tokens = (
                 [self.tokenizer.cls_token_id]
@@ -179,7 +170,7 @@ class PretrainingDatasetGenerator:
         segment_ids = torch.tensor(instances_segment_ids).long()
         is_random_next = torch.tensor(instances_is_random_next).bool()
 
-        masked_tokens, is_masked = self.apply_masking(tokens)
+        masked_tokens, is_masked = apply_masking(tokens, self.tokenizer)
 
         return MLMInstances(
             tokens=tokens.short(),

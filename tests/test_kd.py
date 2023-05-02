@@ -6,15 +6,9 @@ from util import tensor_equal_eps
 from kd import ConstantLayerMap, KDHiddenStates, LinearLayerMap
 from model import get_bert_config
 
-class TestPreparePretrainingDataset(unittest.TestCase):
-
-    def test_apply_masking(self):
-        self.assertEqual('foo'.upper(), 'FOO')
+class TestKD(unittest.TestCase):
 
     def test_linear_layer_map(self):
-        student_layers = 3
-        teacher_layers = 6
-
         layer_map = LinearLayerMap(3,6,initialisation=None)
         self.assertTrue(tensor_equal_eps(layer_map(torch.eye(6).float(), 0), torch.tensor([1/6,1/6,1/6,1/6,1/6,1/6]).float()))
         
