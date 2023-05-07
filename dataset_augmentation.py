@@ -7,15 +7,15 @@ from tqdm import tqdm
 import random
 import pandas as pd
 import torch.multiprocessing as mp
-
+import time
+import numpy as np
     
-
 from utils import set_random_seed
 from load_glue import LOAD_FUNCTIONS
 
 
 class GloveEmbeddings:
-    embedding_vectors: torch.tensor
+    embedding_vectors: np.array
     words: List[str]
     word_to_idx: Dict[str, int]
 
@@ -26,11 +26,11 @@ class GloveEmbeddings:
         for line in tqdm(path.read_text().split("\n")[:-1]):
             line = line.split(" ")
             word = line[0]
-            vector = torch.tensor([float(x) for x in line[1:]])
+            vector = np.array([float(x) for x in line[1:]])
             self.embedding_vectors.append(vector)
             self.words.append(word)
-        self.embedding_vectors = torch.stack(self.embedding_vectors)
-        self.embedding_vectors /= self.embedding_vectors.norm(dim=1).reshape((-1, 1))
+        self.embedding_vectors = np.array(self.embedding_vectors)
+        self.embedding_vectors /= np.linalg.norm(self.embedding_vectors,axis=1).reshape((-1, 1))
 
         self.word_to_idx = {word: i for i, word in enumerate(self.words)}
 
@@ -55,7 +55,7 @@ def get_mlm_model_candidates(
     mlm_model,
     device,
     num_candidates,
-    batch_size=10,
+    batch_size=64,
 ):
     if len(single_token_words) == 0:
         return []
@@ -101,7 +101,7 @@ def get_glove_most_similar(word, glove_embeddings: GloveEmbeddings, num_candidat
     similarities = (
         glove_embeddings.embedding_vectors @ embedding.reshape((-1, 1))
     ).reshape((-1,))
-    candidate_indices = torch.topk(similarities, num_candidates).indices
+    candidate_indices = torch.topk(torch.tensor(similarities), num_candidates).indices
     candidates = [glove_embeddings.words[i] for i in candidate_indices]
     return candidates
 
@@ -169,10 +169,12 @@ def run_data_augmentation_batch(
     dataset,
     tokenizer: BertTokenizer,
     glove_embeddings: GloveEmbeddings,
-    mlm_model,
+    model_name,
     device,
 ):
+    mlm_model = AutoModelForMaskedLM.from_pretrained(model_name)
     mlm_model.to(device)
+
     labels = []
     sentence = []
     sentence2 = []
@@ -202,27 +204,33 @@ def run_data_augmentation_batch(
     
     return pd.DataFrame(data_dict)
 
+def test(*args):
+    print("getting model")
+    mlm_model = AutoModelForMaskedLM.from_pretrained("bert-base-uncased")
+    print("Running model")
+    print("a",mlm_model(torch.tensor([[1,2,3]])))
+
 
 def run_data_augmentation(
     dataset, glove_path, model_name="bert-base-uncased", num_processes=4,num_gpus=4
-):
+):  
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    mlm_model = AutoModelForMaskedLM.from_pretrained(model_name)
-    glove_embeddings = GloveEmbeddings(glove_path)
-
+    glove_embeddings = GloveEmbeddings(glove_path)   
+    
     batch_size = len(dataset) // num_processes + 1
 
     batch_args = [
-        (dataset[i*batch_size : (i+1)* batch_size], tokenizer, glove_embeddings, mlm_model, torch.device(f"cuda:{i%num_gpus}"))
+        (dataset[i*batch_size : (i+1)* batch_size], tokenizer, glove_embeddings, model_name, torch.device(f"cuda:{i%num_gpus}"))
         for i in range(0, num_processes)
     ]
 
-    with mp.Pool(num_processes) as p:
-        augmented_dataset = p.starmap(run_data_augmentation_batch, (batch_args))
-
-    augmented_dataset = pd.concat(augmented_dataset)
+    if num_processes == 1:
+        augmented_dataset = run_data_augmentation_batch(*batch_args[0])
+    else:
+        with mp.Pool(num_processes) as p:
+            augmented_dataset = p.starmap(run_data_augmentation_batch, batch_args)
+        augmented_dataset = pd.concat(augmented_dataset)
     return augmented_dataset
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -236,12 +244,12 @@ def main():
 
     set_random_seed(args.seed)
     
-    dataset = LOAD_FUNCTIONS[args.dataset](args.gluepath / args.dataset).train
+    dataset = LOAD_FUNCTIONS[args.dataset](args.gluepath / args.dataset).train[:1000]
     augmented_dataset = run_data_augmentation(dataset, args.glove, num_gpus=args.num_gpus, num_processes=args.num_processes)
 
     augmented_dataset.to_csv(args.gluepath / args.dataset / "train_aug.tsv", sep="\t")
 
 
 if __name__ == "__main__":
-    mp.set_start_method('spawn',force=True)
+    #mp.set_start_method('spawn',force=True)
     main()

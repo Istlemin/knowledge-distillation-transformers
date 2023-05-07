@@ -30,7 +30,7 @@ from typing import NamedTuple
 from utils import distributed_setup, distributed_cleanup, set_random_seed, setup_logging
 
 
-class MLMBatch(NamedTuple):
+class PretrainingBatch(NamedTuple):
     tokens: torch.tensor
     masked_tokens: torch.tensor
     is_masked: torch.tensor
@@ -38,7 +38,7 @@ class MLMBatch(NamedTuple):
     is_random_next: torch.tensor
 
 
-class MLMDataset(torch.utils.data.Dataset):
+class PretrainingDataset(torch.utils.data.Dataset):
     def __init__(self, path):
         dataset = prepare_pretraining_dataset(path)
         self.tokens = dataset.tokens
@@ -51,7 +51,7 @@ class MLMDataset(torch.utils.data.Dataset):
         return len(self.tokens)
 
     def __getitem__(self, item):
-        return MLMBatch(
+        return PretrainingBatch(
             tokens=self.tokens[item].long(),
             masked_tokens=self.masked_tokens[item].long(),
             is_masked=self.is_masked[item].bool(),
@@ -161,7 +161,7 @@ def pretrain(
         for dataset_part_idx in range(start_part, args.dataset_parts):
             scheduler.step()
             logging.info("Starting dataset part")
-            dataset = MLMDataset(args.dataset_path / f"{dataset_part_idx}")
+            dataset = PretrainingDataset(args.dataset_path / f"{dataset_part_idx}")
             logging.info("Loaded dataset")
             train_sampler = torch.utils.data.distributed.DistributedSampler(
                 dataset, num_replicas=args.num_gpus, rank=gpu_idx, shuffle=True
