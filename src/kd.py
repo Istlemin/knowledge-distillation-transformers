@@ -4,7 +4,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from model import PretrainingModel, SequenceClassificationModel, pretraining_loss
+from modeling.models import PretrainingModel, SequenceClassificationModel, pretraining_loss
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
 from transformers import BertForMaskedLM, BertForSequenceClassification, BertConfig
 

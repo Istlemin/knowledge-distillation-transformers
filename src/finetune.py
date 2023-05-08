@@ -21,7 +21,7 @@ import numpy as np
 from load_glue import load_tokenized_glue_dataset
 from modeling.bert import prepare_bert_for_quantization
 from utils import F1_score, distributed_cleanup, distributed_setup, matthews_correlation, set_random_seed, setup_logging
-from model import (
+from src.modeling.models import (
     BertForSequenceClassificationWithLoss,
     get_bert_config,
     load_pretrained_bert_base,

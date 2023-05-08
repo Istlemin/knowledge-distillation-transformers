@@ -1,6 +1,6 @@
 import argparse
 from transformers import AutoModelForPreTraining
-from model import get_bert_config
+from src.modeling.models import get_bert_config
 from pathlib import Path
 import torch
 

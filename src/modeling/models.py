@@ -12,6 +12,8 @@ from transformers import (
 )
 from abc import abstractmethod
 
+from modeling.quantization import CustomBertSelfAttention
+
 
 class PretrainingModel(torch.nn.Module):
     def __init__(self):
@@ -178,14 +180,12 @@ def make_sequence_classifier(model: BertPreTrainedModel, num_labels):
     new_model.load_state_dict(state_dict, strict=False)
     return new_model
 
-
-if __name__ == "__main__":
-    """
-    Download models
-    """
-
-    pretrained_for_mlm = AutoModelForMaskedLM.from_config(get_bert_config("base"))
-    torch.save(pretrained_for_mlm, "../models/pretrained_bert_mlm.pt")
+def prepare_bert_for_kd(model: BertPreTrainedModel):
+    for layer in model.bert.encoder.layer:
+        layer.attention.self = CustomBertSelfAttention(
+            layer.attention.self, model.config
+        )
+    return model
 
 
 def print_model(

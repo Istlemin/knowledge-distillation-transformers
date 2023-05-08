@@ -12,7 +12,7 @@ from load_glue import (
     load_tokenized_glue_dataset,
 )
 from finetune import finetune
-from model import (
+from src.modeling.models import (
     get_bert_config,
     load_model_from_disk,
 )

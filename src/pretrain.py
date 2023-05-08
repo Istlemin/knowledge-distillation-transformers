@@ -16,7 +16,7 @@ from transformers import (
     AutoModelForPreTraining
 )
 
-from model import (
+from src.modeling.models import (
     BertForPreTrainingWithLoss,
     get_bert_config,
     load_model_from_disk,
