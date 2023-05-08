@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 import random
 from transformers import AutoTokenizer, BertTokenizer
@@ -26,7 +27,9 @@ def tokenize_document_batch(documents,outdir):
     print("saving", outdir, time.time())
     pickle.dump(tokenized_documents, open(outdir,"wb"))
 
-def batched_tokenize(document_dataset, outdir, batch_size=100000,num_workers=8):
+def batched_tokenize(document_dataset, outdir, batch_size=100000):
+    outdir.mkdir(parents=True,exist_ok=True)
+
     shuffle_perm = list(range(len(document_dataset)))
     #random.shuffle(shuffle_perm)
 
@@ -38,10 +41,14 @@ def batched_tokenize(document_dataset, outdir, batch_size=100000,num_workers=8):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--out_path", type=Path, required=True)
+    parser.add_argument("--num_chunks", type=int, default=64)
+    args = parser.parse_args()
+
     dataset = load_dataset("wikipedia", "20220301.en")
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    batch_size = len(dataset["train"]) // 64 + 1
+    batch_size = len(dataset["train"]) // args.num_chunks + 1
     print("Tokenizing...")
-
-    batched_tokenize(dataset["train"], Path("../wikipedia_tokenized/"), batch_size)
+    batched_tokenize(dataset["train"], args.out_path, batch_size)
