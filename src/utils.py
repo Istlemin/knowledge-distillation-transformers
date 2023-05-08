@@ -6,7 +6,6 @@ import torch.distributed as dist
 import random
 import numpy 
 import torch
-from datetime import datetime
 import time
 
 from transformers.optimization import get_linear_schedule_with_warmup
@@ -29,7 +28,6 @@ def setup_logging(path: Optional[Path] = None, logfile_name : str = "log", log_t
     if path is not None:
         path.mkdir(exist_ok=True, parents=True)
         path = path / logfile_name
-        #path.unlink(missing_ok=True)
         handlers.append(logging.FileHandler(path))
 
     if log_timestamp:

@@ -1,27 +1,14 @@
-from collections import defaultdict
-from functools import partial
 import logging
-from multiprocessing import Process, Queue
-import multiprocessing
 import pickle
-from sklearn.utils import gen_batches
 
 from torch.multiprocessing import Pool
-from datasets.arrow_dataset import Dataset
-from matplotlib.lines import segment_hits
 from transformers import PreTrainedTokenizer
 from typing import List, Dict, NamedTuple
 import torch
 import random
 import tqdm
-import glob
 from pathlib import Path
-from datasets import concatenate_datasets
-from transformers import AutoTokenizer
 from transformers.models.bert.tokenization_bert import BertTokenizer
-from load_glue import load_batched_dataset
-import argparse
-import re
 from tqdm import tqdm
 
 from utils import set_random_seed
@@ -42,7 +29,6 @@ def combine_mlm_instances(batches:List[MLMInstances]):
         segment_ids = torch.cat([x.segment_ids for x in batches]),
         is_random_next = torch.cat([x.is_random_next for x in batches]),
     )
-
 
 def apply_masking(
     tokens: torch.tensor,

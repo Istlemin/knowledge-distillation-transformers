@@ -1,13 +1,11 @@
-import torch
-import math
-from torch import nn
-import copy
 import math
 import torch
 from torch import nn
 from typing import Optional, Tuple
+
 from transformers import BertConfig, BertPreTrainedModel
 from transformers.models.bert.modeling_bert import BertSelfAttention
+
 def clip_and_save(ctx, w, clip_val):
     ctx.save_for_backward((w<-clip_val) | (w>clip_val))
     return torch.clamp(w,-clip_val,clip_val)

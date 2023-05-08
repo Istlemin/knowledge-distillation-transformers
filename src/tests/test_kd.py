@@ -1,10 +1,12 @@
 import unittest
 import torch
 from transformers.modeling_outputs import MaskedLMOutput
-from util import tensor_equal_eps
 
 from kd import ConstantLayerMap, KDHiddenStates, LinearLayerMap
 from src.modeling.models import get_bert_config
+
+def tensor_equal_eps(a:torch.Tensor,b:torch.Tensor,eps:float = 1e-9):
+    return ((a-b)<eps).all
 
 class TestKD(unittest.TestCase):
 

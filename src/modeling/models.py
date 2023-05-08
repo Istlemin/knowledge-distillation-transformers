@@ -1,10 +1,8 @@
 from typing import Tuple
-from datasets import Sequence
 import torch
 from transformers import (
     AutoModelForSequenceClassification,
     BertConfig,
-    AutoModelForMaskedLM,
     BertForMaskedLM,
     BertForSequenceClassification,
     BertPreTrainedModel,

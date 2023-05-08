@@ -1,38 +1,28 @@
-from glob import glob
 import json
 from pathlib import Path
-from tokenize import Token
 from typing import Optional
 from datasets.dataset_dict import DatasetDict
-from kd import KDSequenceClassification
 import torch
 from torch.cuda import Device
 from torch.utils.data import DataLoader
-from torch.optim import Adam
-import torch.distributed as dist
-import time
 from pathlib import Path
-import argparse
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
-import random
 import numpy as np
-
-from load_glue import load_tokenized_glue_dataset
-from modeling.bert import prepare_bert_for_quantization
-from utils import F1_score, distributed_cleanup, distributed_setup, matthews_correlation, set_random_seed, setup_logging
-from src.modeling.models import (
-    BertForSequenceClassificationWithLoss,
-    get_bert_config,
-    load_pretrained_bert_base,
-    load_model_from_disk,
-    make_sequence_classifier,
-)
 import logging
 from tqdm.auto import tqdm
+from transformers import AutoModelForSequenceClassification
+
+from kd import KDSequenceClassification
+from modeling.quantization import prepare_bert_for_quantization
+from load_glue import load_tokenized_glue_dataset
+from utils import F1_score, distributed_cleanup, distributed_setup, matthews_correlation, set_random_seed, setup_logging
+from modeling.models import (
+    BertForSequenceClassificationWithLoss,
+    make_sequence_classifier,
+)
 from utils import get_optimizer, get_scheduler
 from args import FinetuneArgs
-from transformers import AutoModelForSequenceClassification
 
 def run_eval(model, dataloader:DataLoader,device: Device,num_gpus):
     model.eval()

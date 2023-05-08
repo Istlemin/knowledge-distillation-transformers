@@ -1,28 +1,18 @@
 import unittest
-import torch
-from transformers.modeling_outputs import MaskedLMOutput
-from util import tensor_equal_eps
 import copy
-import math
 import torch
-from torch import nn
-from typing import Optional, Tuple
-from transformers import BertConfig, BertPreTrainedModel, BertForSequenceClassification
-from transformers.models.bert.modeling_bert import BertSelfAttention
-from transformers import BertForMaskedLM
+from transformers import BertConfig, BertForSequenceClassification
 from utils import set_random_seed
 
 from modeling.quantization import (
-    QuantizedEmbedding,
-    QuantizedLinear,
-    TwnQuantizer,
     MinMaxQuantizer,
     prepare_bert_for_quantization,
 )
-from transformers import BertForMaskedLM
 from utils import set_random_seed
-from kd import ConstantLayerMap, KDHiddenStates, LinearLayerMap
-from modeling.models import BertForSequenceClassificationWithLoss, get_bert_config, prepare_bert_for_kd
+from modeling.models import prepare_bert_for_kd
+
+def tensor_equal_eps(a:torch.Tensor,b:torch.Tensor,eps:float = 1e-9):
+    return ((a-b)<eps).all
 
 class TestQuantisation(unittest.TestCase):
     def test_quantized_bert__32bit_same_as_original(self):

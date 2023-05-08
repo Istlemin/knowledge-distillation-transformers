@@ -1,7 +1,7 @@
 from typing import Optional
 import unittest
-from transformers import AutoTokenizer, BertTokenizer
 import torch
+from transformers import AutoTokenizer, BertTokenizer
 
 from prepare_pretraining_dataset import (
     PretrainingDatasetGenerator,

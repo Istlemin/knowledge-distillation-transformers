@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
-import random
-from transformers import AutoTokenizer, BertTokenizer
+from transformers import AutoTokenizer
 from datasets import load_dataset
 
 from transformers import AutoTokenizer

@@ -8,10 +8,10 @@ from transformers import AutoModelForPreTraining
 from src.modeling.models import (
     get_bert_config,
     load_model_from_disk,
+    prepare_bert_for_kd,
 )
 
 from kd import KDPreTraining, KDTransformerLayers
-from modeling.bert import prepare_bert_for_kd
 from pretrain import pretrain
 from utils import set_random_seed
 
