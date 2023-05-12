@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import Optional
+from modeling.quantization import prepare_bert_for_quantization
 import torch
 from pathlib import Path
 import torch
@@ -15,9 +16,8 @@ from finetune import finetune
 from src.modeling.models import (
     get_bert_config,
     load_model_from_disk,
+    prepare_bert_for_kd,
 )
-from modeling.bert import prepare_bert_for_kd, prepare_bert_for_quantization
-
 
 from kd import KDPred, KDTransformerLayers, KDSequenceClassification, LinearLayerMap
 from utils import set_random_seed

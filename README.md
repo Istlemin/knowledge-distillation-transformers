@@ -7,5 +7,5 @@ The project uses Python 3.9 with PyTorch and the HuggingFace Transformers and Da
 
 ## Reproduction of results
 
-To reproduce the results from the dissertation, perform the following steps:
+To reproduce the results from the dissertation, first download the GLUE Benchmark from here: https://github.com/nyu-mll/GLUE-baselines, and place under `datasets/glue/`. Then run all scripts under `scripts/reproduce` in the numbered order.
 
